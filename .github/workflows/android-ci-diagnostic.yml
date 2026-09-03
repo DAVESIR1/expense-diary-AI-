@@ -32,8 +32,13 @@ jobs:
       - name: Accept Android licenses
         run: yes | sdkmanager --licenses || true
 
+      - name: Node & npm versions
+        run: |
+          node -v
+          npm -v
+
       - name: Install npm dependencies (diagnostic)
-        run: npm ci 2>&1 | tee npm-install.log
+        run: npm install --no-audit --no-fund 2>&1 | tee npm-install.log
 
       - name: Build Web app (vite)
         run: npm run build 2>&1 | tee build.log
