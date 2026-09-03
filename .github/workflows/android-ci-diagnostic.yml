@@ -18,7 +18,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
 
       - name: Setup JDK 21
         uses: actions/setup-java@v4
@@ -38,40 +38,58 @@ jobs:
           npm -v
 
       - name: Install npm dependencies (diagnostic)
-        run: npm install --legacy-peer-deps --no-audit --no-fund 2>&1 | tee npm-install.log
+        run: |
+          set -o pipefail
+          npm install --legacy-peer-deps --no-audit --no-fund 2>&1 | tee npm-install.log
 
       - name: Build Web app (vite)
-        run: npm run build 2>&1 | tee build.log
-
-      - name: Install Capacitor CLI and add/sync Android
         run: |
-          npm install @capacitor/core @capacitor/android @capacitor/cli --no-audit --no-fund
+          set -o pipefail
+          npm run build 2>&1 | tee build.log
+
+      - name: Setup Capacitor and Android Project
+        run: |
+          set -o pipefail
+          if [ ! -f "capacitor.config.json" ]; then
+            echo '{"appId":"com.expensediary.ai","appName":"Expense Diary","webDir":"dist","server":{"androidScheme":"https"}}' > capacitor.config.json
+          fi
           if [ ! -d "android" ]; then
-            npx --yes @capacitor/cli add android 2>&1 | tee cap-add.log || true
+            npx @capacitor/cli add android 2>&1 | tee cap-add.log
           else
-            npx --yes @capacitor/cli sync android 2>&1 | tee cap-sync.log || true
+            npx @capacitor/cli sync android 2>&1 | tee cap-sync.log
           fi
 
       - name: Run android patch scripts
         run: |
-          npm run android:patch 2>&1 | tee android-patch.log || true
-          npm run android:patch-version 2>&1 | tee android-patch-version.log || true
+          set -o pipefail
+          npm run android:patch 2>&1 | tee android-patch.log
+          npm run android:patch-version 2>&1 | tee -a android-patch.log
+
+      - name: Configure Android Gradle Settings
+        run: |
+          sed -i 's/compileSdkVersion = [0-9]*/compileSdkVersion = 35/g' android/variables.gradle 2>/dev/null || true
+          sed -i 's/targetSdkVersion = [0-9]*/targetSdkVersion = 35/g' android/variables.gradle 2>/dev/null || true
+          sed -i '/android.enableJetifier/d' android/gradle.properties 2>/dev/null || true
+          echo "android.enableJetifier=false" >> android/gradle.properties
+          sed -i '/org.gradle.jvmargs/d' android/gradle.properties 2>/dev/null || true
+          echo "org.gradle.jvmargs=-Xmx2048m" >> android/gradle.properties
+          sed -i "s|dirs '../capacitor-cordova-android-plugins/src/main/libs', 'libs'|dirs 'libs'|g" android/app/build.gradle 2>/dev/null || true
+          if ! grep -q "kotlin-stdlib-jdk7" android/app/build.gradle; then
+            echo "configurations.all { exclude group: 'org.jetbrains.kotlin', module: 'kotlin-stdlib-jdk7'; exclude group: 'org.jetbrains.kotlin', module: 'kotlin-stdlib-jdk8' }" >> android/app/build.gradle
+          fi
 
       - name: Make gradlew executable
-        run: chmod +x android/gradlew || true
+        run: chmod +x android/gradlew
 
       - name: Build Debug APK (Gradle)
         run: |
+          set -o pipefail
           cd android
-          ./gradlew assembleDebug --no-daemon --stacktrace 2>&1 | tee ../gradle-assembleDebug.log || true
-
-      - name: Build Release AAB (Gradle)
-        run: |
-          cd android
-          ./gradlew bundleRelease --no-daemon --stacktrace 2>&1 | tee ../gradle-bundleRelease.log || true
+          ./gradlew assembleDebug --no-daemon --stacktrace 2>&1 | tee ../gradle-assembleDebug.log
 
       - name: Upload logs and android folder
         uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: android-diagnostic-logs
           path: |
@@ -81,6 +99,6 @@ jobs:
             cap-sync.log
             android-patch.log
             gradle-assembleDebug.log
-            gradle-bundleRelease.log
-            android/**
+            android/app/build/outputs/apk/debug/*.apk
           if-no-files-found: ignore
+
