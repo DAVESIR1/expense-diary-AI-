@@ -10,6 +10,7 @@
     "build:android:debug": "npm run build && npx @capacitor/cli sync android && cd android && ./gradlew assembleDebug",
     "build:android:bundle": "npm run build && npx @capacitor/cli sync android && cd android && ./gradlew bundleRelease",
     "android:patch": "node ./scripts/patch-android.js",
+    "android:patch-version": "node ./scripts/patch-android-version.js",
     "prepare:android:sign": "echo 'Create a `key.properties` file in the project root with your keystore info (see key.properties.sample).'",
     "start": "node dist/server.cjs",
     "preview": "vite preview",
