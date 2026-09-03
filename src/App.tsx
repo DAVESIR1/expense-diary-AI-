@@ -1,33 +1,31 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  Plus, 
   Sparkles, 
   DownloadCloud, 
   Globe, 
-  Wallet,
-  CheckCircle2,
-  Calendar
+  User
 } from 'lucide-react';
 import { Transaction, TransactionType, Category, UserProfile, PendingAIMessage } from './types';
-import { TRANSLATIONS, getTranslation, LANGUAGES } from './data/languages';
+import { getTranslation, LANGUAGES } from './data/languages';
 import { DEFAULT_CATEGORIES, INITIAL_TRANSACTIONS, INITIAL_USER_PROFILE } from './data/initialData';
 import { HomeScreen } from './components/HomeScreen';
 import { ReportScreen } from './components/ReportScreen';
-import { AIBrainScreen } from './components/AIBrainScreen';
 import { SettingsScreen } from './components/SettingsScreen';
 import { ProfileScreen } from './components/ProfileScreen';
 import { AboutScreen } from './components/AboutScreen';
 import { Navigation, NavTab } from './components/Navigation';
 import { TransactionModal } from './components/TransactionModal';
+import { OnboardingModal } from './components/OnboardingModal';
+import { AIAssistantModal } from './components/AIAssistantModal';
+import { AndroidSMSPermissionModal } from './components/AndroidSMSPermissionModal';
 import { usePWAInstall } from './hooks/usePWAInstall';
 
 export default function App() {
-  // PWA hook
   const { isInstallable, install } = usePWAInstall();
 
-  // Persistent Language State
+  // Persistent Language State - English is the default
   const [currentLang, setCurrentLang] = useState<string>(() => {
-    return localStorage.getItem('expense_diary_lang') || 'gu';
+    return localStorage.getItem('expense_diary_lang') || 'en';
   });
 
   // Persistent Theme & Font State
@@ -41,10 +39,21 @@ export default function App() {
     return localStorage.getItem('expense_diary_currency') || '₹';
   });
 
-  // Active Tab
+  // Active Navigation Tab
   const [currentTab, setCurrentTab] = useState<NavTab>('home');
 
-  // Transactions State
+  // Onboarding Modal state for first-run
+  const [showOnboarding, setShowOnboarding] = useState<boolean>(() => {
+    return !localStorage.getItem('expense_diary_onboarded');
+  });
+
+  // Android SMS Permission modal state
+  const [isSmsModalOpen, setIsSmsModalOpen] = useState(false);
+
+  // AI Assistant drawer / modal state
+  const [isAiModalOpen, setIsAiModalOpen] = useState(false);
+
+  // Clean initial transactions (starts empty, user-driven)
   const [transactions, setTransactions] = useState<Transaction[]>(() => {
     const saved = localStorage.getItem('expense_diary_transactions');
     if (saved) {
@@ -83,27 +92,20 @@ export default function App() {
     return INITIAL_USER_PROFILE;
   });
 
-  // Pending AI auto-detected notifications (shows in Home and AI screens)
-  const [pendingAiMessages, setPendingAiMessages] = useState<PendingAIMessage[]>([
-    {
-      id: 'ai-initial-demo',
-      rawText: 'Dear User, your A/c debited by Rs. 380.00 on 03-Sep-2026 transfer to Swiggy India UPI ref 92837194. Avl Bal: Rs 42,100.00.',
-      parsedData: {
-        type: 'expense',
-        amount: 380,
-        title: 'Swiggy Food Delivery',
-        category: 'Food & Dining',
-        vendorOrPerson: 'Swiggy',
-        paymentMode: 'UPI',
-        notes: 'Ref: 92837194',
-        confirmationQuestion:
-          'AI દ્વારા UPI SMS ડિટેક્ટ થયો છે: શું Swiggy નો ₹380 ખર્ચ સાચો છે? તેને "Food & Dining" કેટેગરીમાં ઉમેરું?',
-      },
-      detectedAt: new Date().toISOString(),
-    },
-  ]);
+  // Pending AI auto-detected notifications (starts empty, no fake mock Swiggy alert)
+  const [pendingAiMessages, setPendingAiMessages] = useState<PendingAIMessage[]>(() => {
+    const saved = localStorage.getItem('expense_diary_pending_ai');
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch (e) {
+        return [];
+      }
+    }
+    return [];
+  });
 
-  // Modal State
+  // Modal State for adding transactions
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [addModalType, setAddModalType] = useState<TransactionType>('expense');
 
@@ -119,6 +121,10 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('expense_diary_profile', JSON.stringify(profile));
   }, [profile]);
+
+  useEffect(() => {
+    localStorage.setItem('expense_diary_pending_ai', JSON.stringify(pendingAiMessages));
+  }, [pendingAiMessages]);
 
   useEffect(() => {
     localStorage.setItem('expense_diary_lang', currentLang);
@@ -138,8 +144,9 @@ export default function App() {
 
   // Current translation strings
   const t = getTranslation(currentLang);
+  const isGu = currentLang === 'gu';
 
-  // Handlers
+  // Transaction handlers
   const handleOpenAddModal = (type: TransactionType) => {
     setAddModalType(type);
     setIsAddModalOpen(true);
@@ -171,7 +178,7 @@ export default function App() {
         time: new Date().toTimeString().split(' ')[0].substring(0, 5),
         vendorOrPerson: msg.parsedData.vendorOrPerson,
         paymentMode: msg.parsedData.paymentMode || 'UPI',
-        notes: msg.parsedData.notes || 'AI આપમેળે શોધાયેલ વ્યવહાર',
+        notes: msg.parsedData.notes || (isGu ? 'AI આપમેળે શોધાયેલ વ્યવહાર' : 'Auto-detected by AI'),
         isAiGenerated: true,
       };
       setTransactions((prev) => [newTx, ...prev]);
@@ -204,10 +211,17 @@ export default function App() {
     setTransactions(txs);
   };
 
-  const handleResetSampleData = () => {
-    setTransactions(INITIAL_TRANSACTIONS);
-    setCategories(DEFAULT_CATEGORIES);
-    setProfile(INITIAL_USER_PROFILE);
+  // Onboarding completion
+  const handleOnboardingComplete = (name: string, selectedCurrency: string, budget: number) => {
+    setProfile((prev) => ({
+      ...prev,
+      name,
+      monthlyBudget: budget,
+      currency: selectedCurrency,
+    }));
+    setCurrency(selectedCurrency);
+    localStorage.setItem('expense_diary_onboarded', 'true');
+    setShowOnboarding(false);
   };
 
   // Font class resolver
@@ -241,83 +255,98 @@ export default function App() {
   return (
     <div
       id="app-root-container"
-      className={`min-h-screen ${getThemeBackground()} ${getFontFamilyClass()} text-[#2D3436] transition-colors duration-200`}
+      className={`min-h-screen ${getThemeBackground()} ${getFontFamilyClass()} text-stone-800 transition-colors duration-200 flex flex-col`}
     >
-      {/* Top Header Bar with Bold Typography theme layout */}
+      {/* Onboarding Modal for First Time Users */}
+      {showOnboarding && (
+        <OnboardingModal
+          onComplete={handleOnboardingComplete}
+          currentLang={currentLang}
+          onSelectLanguage={setCurrentLang}
+          t={t}
+        />
+      )}
+
+      {/* Top Header Bar with Safe-Area Inset Support */}
       <header
         id="app-top-header"
-        className="sticky top-0 z-30 border-b border-[#E1E8ED] bg-[#F9FBFC]/90 backdrop-blur-md transition-all"
+        className="sticky top-0 z-30 border-b border-stone-200/80 bg-white/90 backdrop-blur-md transition-all pt-[env(safe-area-inset-top,0px)]"
       >
-        <div className="max-w-4xl mx-auto px-4 sm:px-6 py-3.5 flex items-center justify-between">
-          {/* Greeting & Date / App identity */}
+        <div className="max-w-3xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between">
+          {/* Greeting & Date */}
           <div
             className="flex flex-col cursor-pointer select-none"
             onClick={() => setCurrentTab('home')}
           >
             <div className="flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-[#6C5CE7]" />
-              <h2 className="text-xs sm:text-sm uppercase tracking-widest text-[#636E72] font-semibold truncate">
-                {profile.name ? `નમસ્તે, ${profile.name}` : `નમસ્તે, ${t.appName}`}
+              <span className="w-2 h-2 rounded-full bg-emerald-600" />
+              <h2 className="text-xs sm:text-sm font-bold text-stone-800 tracking-tight truncate max-w-[180px] sm:max-w-xs">
+                {profile.name
+                  ? (isGu ? `નમસ્તે, ${profile.name}` : `Hello, ${profile.name}`)
+                  : t.appName}
               </h2>
             </div>
-            <p className="text-[11px] sm:text-xs text-[#B2BEC3] font-medium mt-0.5">
+            <p className="text-[11px] text-stone-400 font-medium mt-0.5">
               {new Date().toLocaleDateString(currentLang === 'gu' ? 'gu-IN' : 'en-US', {
-                weekday: 'long',
+                weekday: 'short',
                 day: 'numeric',
-                month: 'long',
+                month: 'short',
                 year: 'numeric',
               })}
             </p>
           </div>
 
-          {/* Header Controls: Quick Language Switch, Install & User Avatar */}
-          <div className="flex items-center gap-2.5 sm:gap-3">
-            {isInstallable && (
-              <button
-                id="header-pwa-install-btn"
-                onClick={install}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white text-[#2D6A4F] hover:bg-[#EBFBEE] border border-[#D1F7D9] text-xs font-semibold shadow-xs transition cursor-pointer"
-                title="ડિવાઇસ પર એપ ઇન્સ્ટોલ કરો"
-              >
-                <DownloadCloud className="w-3.5 h-3.5 stroke-[2.5]" />
-                <span className="hidden sm:inline">ઇન્સ્ટોલ</span>
-              </button>
-            )}
+          {/* Header Controls */}
+          <div className="flex items-center gap-2 sm:gap-2.5">
+            {/* AI Assistant Quick Trigger Pill */}
+            <button
+              id="header-ai-assistant-btn"
+              onClick={() => setIsAiModalOpen(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-xs font-semibold transition cursor-pointer"
+              title="AI Assistant"
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">AI Assistant</span>
+            </button>
 
-            {/* Quick Language Selector matching Bold Typography pill */}
-            <div className="relative flex items-center bg-white border border-[#E1E8ED] hover:border-[#B2BEC3] rounded-full px-3 py-1.5 shadow-xs transition cursor-pointer">
-              <Globe className="w-3.5 h-3.5 text-[#636E72] pointer-events-none mr-1.5" />
+            {/* Quick Language Selector */}
+            <div className="relative flex items-center bg-white border border-stone-200 hover:border-stone-300 rounded-full px-2.5 py-1 text-xs shadow-xs transition cursor-pointer">
+              <Globe className="w-3.5 h-3.5 text-stone-400 pointer-events-none mr-1" />
               <select
                 id="header-language-select"
                 value={currentLang}
                 onChange={(e) => setCurrentLang(e.target.value)}
-                className="text-xs font-medium bg-transparent text-[#2D3436] outline-none cursor-pointer pr-1"
+                className="text-xs font-semibold bg-transparent text-stone-700 outline-none cursor-pointer pr-1 uppercase"
               >
                 {LANGUAGES.map((l) => (
                   <option key={l.code} value={l.code}>
-                    {l.code.toUpperCase()} ({l.nativeName})
+                    {l.code.toUpperCase()} ({l.name})
                   </option>
                 ))}
               </select>
             </div>
 
-            {/* User Avatar Circle from Bold Typography theme */}
+            {/* Profile Avatar */}
             <button
               id="header-profile-avatar-btn"
               onClick={() => setCurrentTab('profile')}
               title={profile.name || t.profile}
-              className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-[#DFE6E9] border-2 border-white shadow-xs overflow-hidden cursor-pointer hover:scale-105 active:scale-95 transition-all flex items-center justify-center shrink-0"
+              className="w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-stone-100 border border-stone-200 shadow-xs overflow-hidden cursor-pointer hover:scale-105 active:scale-95 transition-all flex items-center justify-center shrink-0"
             >
-              <div className="w-full h-full bg-gradient-to-br from-[#A29BFE] to-[#6C5CE7] flex items-center justify-center text-white text-xs font-bold uppercase tracking-wider">
-                {profile.name ? profile.name.charAt(0) : 'E'}
-              </div>
+              {profile.avatarUrl ? (
+                <img src={profile.avatarUrl} alt="Avatar" className="w-full h-full object-cover" />
+              ) : (
+                <div className="w-full h-full bg-emerald-600 flex items-center justify-center text-white text-xs font-bold uppercase">
+                  {profile.name ? profile.name.charAt(0) : 'E'}
+                </div>
+              )}
             </button>
           </div>
         </div>
       </header>
 
       {/* Main Content Area */}
-      <main id="app-main-content" className="max-w-4xl mx-auto px-4 sm:px-6 pt-5">
+      <main id="app-main-content" className="flex-1 max-w-3xl mx-auto w-full px-4 sm:px-6 pt-4 sm:pt-6">
         {currentTab === 'home' && (
           <HomeScreen
             transactions={transactions}
@@ -338,19 +367,7 @@ export default function App() {
             categories={categories}
             t={t}
             currency={currency}
-          />
-        )}
-
-        {currentTab === 'ai' && (
-          <AIBrainScreen
-            transactions={transactions}
-            categories={categories}
-            onAddTransaction={handleAddTransaction}
-            pendingAiMessages={pendingAiMessages}
-            onAddPendingAiMessage={handleAddPendingAiMessage}
-            onConfirmAiMessage={handleConfirmAiMessage}
-            t={t}
-            currency={currency}
+            currentLang={currentLang}
           />
         )}
 
@@ -370,6 +387,9 @@ export default function App() {
             t={t}
             currency={currency}
             onSelectCurrency={setCurrency}
+            transactions={transactions}
+            onRestoreTransactions={handleRestoreTransactions}
+            onOpenSMSModal={() => setIsSmsModalOpen(true)}
           />
         )}
 
@@ -378,25 +398,38 @@ export default function App() {
             profile={profile}
             onUpdateProfile={handleUpdateProfile}
             transactions={transactions}
-            onRestoreTransactions={handleRestoreTransactions}
-            onResetSampleData={handleResetSampleData}
             t={t}
             currency={currency}
+            currentLang={currentLang}
           />
         )}
 
-        {currentTab === 'about' && <AboutScreen t={t} />}
+        {currentTab === 'about' && (
+          <AboutScreen
+            t={t}
+            currentLang={currentLang}
+          />
+        )}
       </main>
 
-      {/* Floating Bottom Navigation Bar: 'home' 'report' 'ai' 'setting' 'પ્રોફાઈલ' 'about' */}
+      {/* Floating AI Assistant FAB Button (Accessible from any screen) */}
+      <button
+        id="ai-assistant-floating-btn"
+        onClick={() => setIsAiModalOpen(true)}
+        className="fixed right-4 bottom-20 sm:bottom-24 z-30 p-3.5 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white shadow-lg shadow-indigo-600/30 transition-all hover:scale-105 active:scale-95 flex items-center justify-center cursor-pointer"
+        title="Open AI Assistant"
+      >
+        <Sparkles className="w-5 h-5" />
+      </button>
+
+      {/* Bottom Floating 5-Tab Navigation */}
       <Navigation
         currentTab={currentTab}
         onTabChange={setCurrentTab}
         t={t}
-        pendingAiCount={pendingAiMessages.length}
       />
 
-      {/* Add Transaction Modal ('આવક ઉમેરો' / 'ખર્ચ ઉમેરો') */}
+      {/* Transaction Modal (Add Income / Expense) */}
       <TransactionModal
         isOpen={isAddModalOpen}
         onClose={() => setIsAddModalOpen(false)}
@@ -405,6 +438,32 @@ export default function App() {
         categories={categories}
         t={t}
         currency={currency}
+        currentLang={currentLang}
+      />
+
+      {/* AI Assistant Modal */}
+      <AIAssistantModal
+        isOpen={isAiModalOpen}
+        onClose={() => setIsAiModalOpen(false)}
+        transactions={transactions}
+        categories={categories}
+        onAddTransaction={handleAddTransaction}
+        onAddPendingAiMessage={handleAddPendingAiMessage}
+        currency={currency}
+        currentLang={currentLang}
+        t={t}
+      />
+
+      {/* Android SMS Permission Modal */}
+      <AndroidSMSPermissionModal
+        isOpen={isSmsModalOpen}
+        onClose={() => setIsSmsModalOpen(false)}
+        onGrantPermission={() => {
+          // Trigger native Android SMS permission or local storage marker
+          localStorage.setItem('expense_diary_sms_granted', 'true');
+        }}
+        currentLang={currentLang}
+        t={t}
       />
     </div>
   );

@@ -79,5 +79,21 @@ if (fs.existsSync(appBuildGradle)) {
   }
 }
 
+// Patch AndroidManifest.xml for SMS permissions
+const manifestPath = path.join(androidDir, 'app', 'src', 'main', 'AndroidManifest.xml');
+if (fs.existsSync(manifestPath)) {
+  let m = safeRead(manifestPath);
+  if (m && !/android\.permission\.RECEIVE_SMS/.test(m)) {
+    const permissions = `
+    <uses-permission android:name="android.permission.RECEIVE_SMS" />
+    <uses-permission android:name="android.permission.READ_SMS" />
+`;
+    m = m.replace('<application', permissions + '\n    <application');
+    safeWrite(manifestPath, m);
+    console.log('Patched AndroidManifest.xml with SMS permissions');
+  }
+}
+
 console.log('Android patch complete.');
+
 

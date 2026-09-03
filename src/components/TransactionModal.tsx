@@ -11,6 +11,7 @@ interface TransactionModalProps {
   categories: Category[];
   t: TranslationStrings;
   currency: string;
+  currentLang: string;
 }
 
 export const TransactionModal: React.FC<TransactionModalProps> = ({
@@ -21,21 +22,25 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
   categories,
   t,
   currency,
+  currentLang,
 }) => {
+  const isGu = currentLang === 'gu';
   const amountRef = React.useRef<HTMLInputElement | null>(null);
 
   React.useEffect(() => {
-    function onKey(e: KeyboardEvent){
-      if(e.key === 'Escape') onClose();
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') onClose();
     }
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
   }, [onClose]);
 
-  React.useEffect(()=>{
-    // focus amount for quicker entry
-    setTimeout(()=> amountRef.current?.focus(), 50);
-  }, []);
+  React.useEffect(() => {
+    if (isOpen) {
+      setTimeout(() => amountRef.current?.focus(), 50);
+    }
+  }, [isOpen]);
+
   const [amount, setAmount] = useState('');
   const [title, setTitle] = useState('');
   const [category, setCategory] = useState(
@@ -77,13 +82,13 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
       isAiGenerated: false,
     });
 
-    onClose();
     // Reset form
     setAmount('');
     setTitle('');
     setVendorOrPerson('');
     setMobileNumber('');
     setNotes('');
+    onClose();
   };
 
   const isIncome = type === 'income';
@@ -91,7 +96,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
   return (
     <div
       id="transaction-modal-backdrop"
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-900/40 backdrop-blur-xs animate-in fade-in duration-150"
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/40 backdrop-blur-xs animate-in fade-in duration-150"
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
@@ -99,13 +104,12 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
     >
       <div
         id="transaction-modal-card"
-        className="w-full max-w-lg rounded-[28px] bg-white border border-[#E1E8ED] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-150"
+        className="w-full max-w-lg rounded-3xl bg-white border border-stone-200 shadow-2xl overflow-hidden animate-in zoom-in-95 duration-150 max-h-[92vh] flex flex-col"
         role="dialog"
         aria-modal="true"
         aria-labelledby="transaction-modal-title"
-        tabIndex={-1}
       >
-        {/* Header with Bold Typography tone */}
+        {/* Header */}
         <div
           className={`flex items-center justify-between px-6 py-4.5 border-b ${
             isIncome
@@ -120,7 +124,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
               }`}
             />
             <h2
-              className={`text-xl font-bold ${
+              className={`text-lg sm:text-xl font-bold ${
                 isIncome ? 'text-[#1B4332]' : 'text-[#742A2A]'
               }`}
               id="transaction-modal-title"
@@ -131,21 +135,21 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
           <button
             id="close-transaction-modal-btn"
             onClick={onClose}
-            className="p-1.5 rounded-full text-[#B2BEC3] hover:text-[#2D3436] hover:bg-white/90 transition-colors cursor-pointer"
+            className="p-1.5 rounded-full text-stone-400 hover:text-stone-700 hover:bg-white/80 transition cursor-pointer"
           >
             <X className="w-5 h-5 stroke-[2]" />
           </button>
         </div>
 
         {/* Form Body */}
-        <form onSubmit={handleSubmit} className="p-6 space-y-4 text-[#2D3436]">
+        <form onSubmit={handleSubmit} className="p-5 sm:p-6 space-y-4 overflow-y-auto flex-1 text-stone-800">
           {/* Amount input */}
           <div>
-            <label className="block text-xs font-semibold text-[#636E72] uppercase tracking-wider mb-1.5">
+            <label className="block text-xs font-semibold text-stone-600 uppercase tracking-wider mb-1.5">
               {t.amount} ({currency})
             </label>
             <div className="relative flex items-center">
-              <span className="absolute left-4 text-2xl font-bold text-[#B2BEC3]">
+              <span className="absolute left-4 text-2xl font-bold text-stone-400">
                 {currency}
               </span>
               <input
@@ -157,8 +161,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
                 placeholder="0.00"
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
-                aria-label={t.amount}
-                className={`w-full pl-11 pr-4 py-3.5 text-3xl font-bold tracking-tight rounded-2xl border transition-colors outline-none font-mono ${
+                className={`w-full pl-11 pr-4 py-3 text-2xl sm:text-3xl font-bold tracking-tight rounded-2xl border transition-colors outline-none font-mono ${
                   isIncome
                     ? 'border-[#D1F7D9] focus:border-[#2D6A4F] text-[#1B4332] bg-[#EBFBEE]/30'
                     : 'border-[#FEE2E2] focus:border-[#C53030] text-[#742A2A] bg-[#FFF0F0]/30'
@@ -169,59 +172,63 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
 
           {/* Title / Description */}
           <div>
-            <label className="block text-xs font-semibold text-[#636E72] uppercase tracking-wider mb-1.5">
+            <label className="block text-xs font-semibold text-stone-600 uppercase tracking-wider mb-1.5">
               {t.title}
             </label>
             <input
               id="transaction-title-input"
               type="text"
               required
-              placeholder={isIncome ? 'દા.ત. માસિક પગાર, વેચાણ' : 'દા.ત. શાકભાજી, હોટેલ બિલ'}
+              placeholder={
+                isIncome
+                  ? (isGu ? 'દા.ત. પગાર, વ્યાજ, વેચાણ' : 'e.g. Salary, Freelance project')
+                  : (isGu ? 'દા.ત. શાકભાજી, હોટેલ બિલ' : 'e.g. Groceries, Dinner, Electricity')
+              }
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              className="w-full px-4 py-2.5 text-sm rounded-xl border border-[#E1E8ED] hover:border-[#B2BEC3] focus:border-[#6C5CE7] outline-none transition text-[#2D3436]"
+              className="w-full px-4 py-2.5 text-xs sm:text-sm rounded-xl border border-stone-200 hover:border-stone-300 focus:border-indigo-500 outline-none transition"
             />
           </div>
 
           {/* Category & Payment Mode */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
             <div>
-              <label className="flex items-center gap-1.5 text-xs font-semibold text-[#636E72] uppercase tracking-wider mb-1.5">
+              <label className="flex items-center gap-1.5 text-xs font-semibold text-stone-600 uppercase tracking-wider mb-1.5">
                 <Tag className="w-3.5 h-3.5 stroke-[1.75]" />
-                {t.category}
+                <span>{t.category}</span>
               </label>
               <select
                 id="transaction-category-select"
                 value={category}
                 onChange={(e) => setCategory(e.target.value)}
-                className="w-full px-3.5 py-2.5 text-sm rounded-xl border border-[#E1E8ED] bg-white hover:border-[#B2BEC3] focus:border-[#6C5CE7] outline-none transition text-[#2D3436]"
+                className="w-full px-3.5 py-2.5 text-xs sm:text-sm rounded-xl border border-stone-200 bg-white hover:border-stone-300 focus:border-indigo-500 outline-none transition cursor-pointer font-medium"
               >
                 {relevantCategories.map((cat) => (
                   <option key={cat.id} value={cat.name}>
-                    {cat.nameGu ? `${cat.nameGu} (${cat.name})` : cat.name}
+                    {isGu ? (cat.nameGu || cat.name) : cat.name}
                   </option>
                 ))}
               </select>
             </div>
 
             <div>
-              <label className="flex items-center gap-1.5 text-xs font-semibold text-[#636E72] uppercase tracking-wider mb-1.5">
+              <label className="flex items-center gap-1.5 text-xs font-semibold text-stone-600 uppercase tracking-wider mb-1.5">
                 <CreditCard className="w-3.5 h-3.5 stroke-[1.75]" />
-                {t.paymentMode}
+                <span>{t.paymentMode}</span>
               </label>
               <select
                 id="transaction-payment-mode-select"
                 value={paymentMode}
                 onChange={(e) => setPaymentMode(e.target.value)}
-                className="w-full px-3.5 py-2.5 text-sm rounded-xl border border-[#E1E8ED] bg-white hover:border-[#B2BEC3] focus:border-[#6C5CE7] outline-none transition text-[#2D3436]"
+                className="w-full px-3.5 py-2.5 text-xs sm:text-sm rounded-xl border border-stone-200 bg-white hover:border-stone-300 focus:border-indigo-500 outline-none transition cursor-pointer font-medium"
               >
                 <option value="UPI">UPI (GPay / PhonePe / Paytm)</option>
-                <option value="Cash">રોકડ (Cash)</option>
-                <option value="Bank Transfer">બેંક ટ્રાન્સફર (NEFT/IMPS)</option>
-                <option value="Debit Card">ડેબિટ કાર્ડ (Debit Card)</option>
-                <option value="Credit Card">ક્રેડિટ કાર્ડ (Credit Card)</option>
-                <option value="Cheque">ચેક (Cheque)</option>
-                <option value="Other">અન્ય (Other)</option>
+                <option value="Cash">{isGu ? 'રોકડ (Cash)' : 'Cash'}</option>
+                <option value="Bank Transfer">{isGu ? 'બેંક ટ્રાન્સફર (NEFT/IMPS)' : 'Bank Transfer'}</option>
+                <option value="Debit Card">{isGu ? 'ડેબિટ કાર્ડ (Debit Card)' : 'Debit Card'}</option>
+                <option value="Credit Card">{isGu ? 'ક્રેડિટ કાર્ડ (Credit Card)' : 'Credit Card'}</option>
+                <option value="Cheque">{isGu ? 'ચેક (Cheque)' : 'Cheque'}</option>
+                <option value="Other">{isGu ? 'અન્ય (Other)' : 'Other'}</option>
               </select>
             </div>
           </div>
@@ -229,22 +236,22 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
           {/* Person / Mobile Number (Optional) */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
             <div>
-              <label className="flex items-center gap-1.5 text-xs font-semibold text-[#636E72] uppercase tracking-wider mb-1.5">
+              <label className="flex items-center gap-1.5 text-xs font-semibold text-stone-600 uppercase tracking-wider mb-1.5">
                 <User className="w-3.5 h-3.5 stroke-[1.75]" />
-                {t.personOrMobile}
+                <span>{t.personOrMobile}</span>
               </label>
               <input
                 id="transaction-vendor-input"
                 type="text"
-                placeholder="દા.ત. રમેશભાઈ / Zomato"
+                placeholder={isGu ? 'દા.ત. રમેશભાઈ અથવા દુકાન' : 'e.g. John or Merchant name'}
                 value={vendorOrPerson}
                 onChange={(e) => setVendorOrPerson(e.target.value)}
-                className="w-full px-3.5 py-2.5 text-sm rounded-xl border border-[#E1E8ED] hover:border-[#B2BEC3] focus:border-[#6C5CE7] outline-none transition text-[#2D3436]"
+                className="w-full px-3.5 py-2.5 text-xs sm:text-sm rounded-xl border border-stone-200 hover:border-stone-300 focus:border-indigo-500 outline-none transition"
               />
             </div>
             <div>
-              <label className="block text-xs font-semibold text-[#636E72] uppercase tracking-wider mb-1.5">
-                મોબાઈલ નંબર (વૈકલ્પિક)
+              <label className="block text-xs font-semibold text-stone-600 uppercase tracking-wider mb-1.5">
+                {isGu ? 'મોબાઈલ નંબર (વૈકલ્પિક)' : 'Mobile Number (Optional)'}
               </label>
               <input
                 id="transaction-mobile-input"
@@ -252,17 +259,17 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
                 placeholder="9876543210"
                 value={mobileNumber}
                 onChange={(e) => setMobileNumber(e.target.value)}
-                className="w-full px-3.5 py-2.5 text-sm rounded-xl border border-[#E1E8ED] hover:border-[#B2BEC3] focus:border-[#6C5CE7] outline-none transition text-[#2D3436]"
+                className="w-full px-3.5 py-2.5 text-xs sm:text-sm rounded-xl border border-stone-200 hover:border-stone-300 focus:border-indigo-500 outline-none transition font-mono"
               />
             </div>
           </div>
 
           {/* Date & Time */}
-          <div className="grid grid-cols-2 gap-3.5">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
             <div>
-              <label className="flex items-center gap-1.5 text-xs font-semibold text-[#636E72] uppercase tracking-wider mb-1.5">
+              <label className="flex items-center gap-1.5 text-xs font-semibold text-stone-600 uppercase tracking-wider mb-1.5">
                 <Calendar className="w-3.5 h-3.5 stroke-[1.75]" />
-                {t.date}
+                <span>{t.date}</span>
               </label>
               <input
                 id="transaction-date-input"
@@ -270,62 +277,61 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
                 required
                 value={date}
                 onChange={(e) => setDate(e.target.value)}
-                className="w-full px-3.5 py-2.5 text-sm rounded-xl border border-[#E1E8ED] hover:border-[#B2BEC3] focus:border-[#6C5CE7] outline-none transition text-[#2D3436]"
+                className="w-full px-3.5 py-2.5 text-xs sm:text-sm rounded-xl border border-stone-200 hover:border-stone-300 focus:border-indigo-500 outline-none transition font-mono cursor-pointer"
               />
             </div>
-
             <div>
-              <label className="flex items-center gap-1.5 text-xs font-semibold text-[#636E72] uppercase tracking-wider mb-1.5">
+              <label className="flex items-center gap-1.5 text-xs font-semibold text-stone-600 uppercase tracking-wider mb-1.5">
                 <Clock className="w-3.5 h-3.5 stroke-[1.75]" />
-                {t.time}
+                <span>{t.time}</span>
               </label>
               <input
                 id="transaction-time-input"
                 type="time"
                 value={time}
                 onChange={(e) => setTime(e.target.value)}
-                className="w-full px-3.5 py-2.5 text-sm rounded-xl border border-[#E1E8ED] hover:border-[#B2BEC3] focus:border-[#6C5CE7] outline-none transition text-[#2D3436]"
+                className="w-full px-3.5 py-2.5 text-xs sm:text-sm rounded-xl border border-stone-200 hover:border-stone-300 focus:border-indigo-500 outline-none transition font-mono cursor-pointer"
               />
             </div>
           </div>
 
-          {/* Notes */}
+          {/* Notes (Optional) */}
           <div>
-            <label className="flex items-center gap-1.5 text-xs font-semibold text-[#636E72] uppercase tracking-wider mb-1.5">
+            <label className="flex items-center gap-1.5 text-xs font-semibold text-stone-600 uppercase tracking-wider mb-1.5">
               <FileText className="w-3.5 h-3.5 stroke-[1.75]" />
-              {t.notes}
+              <span>{t.notes}</span>
             </label>
-            <input
+            <textarea
               id="transaction-notes-input"
-              type="text"
-              placeholder="વિશેષ નોંધ અથવા સંદર્ભ નંબર"
+              rows={2}
+              placeholder={isGu ? 'કોઈ ખાસ નોંધ કે સંદર્ભ...' : 'Any optional reference or remarks...'}
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
-              className="w-full px-3.5 py-2.5 text-sm rounded-xl border border-[#E1E8ED] hover:border-[#B2BEC3] focus:border-[#6C5CE7] outline-none transition text-[#2D3436]"
+              className="w-full px-3.5 py-2 text-xs sm:text-sm rounded-xl border border-stone-200 hover:border-stone-300 focus:border-indigo-500 outline-none transition resize-none"
             />
           </div>
 
           {/* Action Buttons */}
-          <div className="flex items-center justify-end gap-3 pt-3 border-t border-[#E1E8ED]">
+          <div className="flex gap-3 pt-3">
             <button
-              id="cancel-transaction-modal-btn"
               type="button"
+              id="cancel-transaction-btn"
               onClick={onClose}
-              className="px-4 py-2.5 text-sm font-semibold text-[#636E72] hover:text-[#2D3436] rounded-xl hover:bg-[#F1F2F6] transition-colors cursor-pointer"
+              className="flex-1 py-3 px-4 rounded-xl border border-stone-200 text-stone-600 hover:bg-stone-50 font-semibold text-xs sm:text-sm transition cursor-pointer"
             >
               {t.cancel}
             </button>
             <button
-              id="save-transaction-modal-btn"
               type="submit"
-              className={`flex items-center gap-2 px-6 py-2.5 text-sm font-bold text-white rounded-xl shadow-xs transition-all cursor-pointer ${
+              id="save-transaction-btn"
+              className={`flex-1 py-3 px-4 rounded-xl text-white font-semibold text-xs sm:text-sm shadow-xs transition cursor-pointer flex items-center justify-center gap-2 ${
                 isIncome
-                  ? 'bg-[#1B4332] hover:bg-[#2D6A4F] active:scale-98'
-                  : 'bg-[#742A2A] hover:bg-[#C53030] active:scale-98'
+                  ? 'bg-emerald-600 hover:bg-emerald-700'
+                  : 'bg-rose-600 hover:bg-rose-700'
               }`}
             >
-              <Plus className="w-4 h-4 stroke-[2.5]" />
-              {t.save}
+              <Plus className="w-4 h-4" />
+              <span>{t.save}</span>
             </button>
           </div>
         </form>

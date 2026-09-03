@@ -2,32 +2,28 @@ import React from 'react';
 import { 
   Home, 
   FileText, 
-  Sparkles, 
   Settings, 
   User, 
   Info 
 } from 'lucide-react';
 import { TranslationStrings } from '../data/languages';
 
-export type NavTab = 'home' | 'report' | 'ai' | 'settings' | 'profile' | 'about';
+export type NavTab = 'home' | 'report' | 'settings' | 'profile' | 'about';
 
 interface NavigationProps {
   currentTab: NavTab;
   onTabChange: (tab: NavTab) => void;
   t: TranslationStrings;
-  pendingAiCount?: number;
 }
 
 export const Navigation: React.FC<NavigationProps> = ({
   currentTab,
   onTabChange,
   t,
-  pendingAiCount = 0,
 }) => {
   const navItems = [
     { id: 'home' as NavTab, label: t.home, icon: Home },
     { id: 'report' as NavTab, label: t.report, icon: FileText },
-    { id: 'ai' as NavTab, label: t.aiAssistant, icon: Sparkles, badge: pendingAiCount },
     { id: 'settings' as NavTab, label: t.settings, icon: Settings },
     { id: 'profile' as NavTab, label: t.profile, icon: User },
     { id: 'about' as NavTab, label: t.about, icon: Info },
@@ -36,9 +32,11 @@ export const Navigation: React.FC<NavigationProps> = ({
   return (
     <nav
       id="bottom-floating-navigation"
-      className="fixed bottom-3 sm:bottom-4 left-1/2 -translate-x-1/2 z-40 w-[94%] max-w-xl"
+      className="fixed bottom-2 sm:bottom-4 left-1/2 -translate-x-1/2 z-40 w-[94%] max-w-lg pb-[env(safe-area-inset-bottom,0px)]"
+      role="navigation"
+      aria-label="Main Navigation"
     >
-      <div className="flex items-center justify-around px-2 py-2 rounded-2xl bg-white/95 backdrop-blur-md border border-[#E1E8ED] shadow-lg shadow-[#2D3436]/5">
+      <div className="flex items-center justify-around px-2 py-1.5 sm:py-2 rounded-2xl sm:rounded-3xl bg-white/95 backdrop-blur-md border border-stone-200/80 shadow-lg shadow-stone-900/5">
         {navItems.map((item) => {
           const Icon = item.icon;
           const isActive = currentTab === item.id;
@@ -47,24 +45,25 @@ export const Navigation: React.FC<NavigationProps> = ({
               key={item.id}
               id={`bottom-nav-${item.id}`}
               onClick={() => onTabChange(item.id)}
-              aria-label={`${item.label}`}
+              aria-label={item.label}
               aria-current={isActive ? 'page' : undefined}
-              className={`relative flex flex-col items-center justify-center touch-target rounded-xl transition-all duration-150 ${
+              className={`relative flex flex-col items-center justify-center py-1.5 px-3 sm:px-4 rounded-xl sm:rounded-2xl transition-all duration-150 cursor-pointer ${
                 isActive
-                  ? 'text-[#6C5CE7] font-bold scale-102 bg-[#F4F1FD]'
-                  : 'text-[#B2BEC3] hover:text-[#636E72] hover:bg-[#F9FBFC]'
+                  ? 'text-emerald-700 font-semibold bg-emerald-50'
+                  : 'text-stone-400 hover:text-stone-600 hover:bg-stone-50'
               }`}
             >
-              {/* Icon with bold theme stroke */}
-              <div className="relative">
-                <Icon className={`w-6 h-6 ${isActive ? 'stroke-[2.5]' : 'stroke-[1.75]'}`} aria-hidden="true" />
-                {Boolean(item.badge && item.badge > 0) && (
-                  <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-[#1976D2] border-2 border-white animate-pulse" />
-                )}
-              </div>
-
-              {/* Label */}
-              <span className={`text-[10px] tracking-tight mt-1 whitespace-nowrap ${isActive ? 'font-bold' : 'font-medium'}`}>
+              <Icon
+                className={`w-5 h-5 sm:w-5.5 sm:h-5.5 ${
+                  isActive ? 'stroke-[2.2]' : 'stroke-[1.6]'
+                }`}
+                aria-hidden="true"
+              />
+              <span
+                className={`text-[10px] sm:text-[11px] tracking-tight mt-0.5 whitespace-nowrap ${
+                  isActive ? 'font-bold' : 'font-normal'
+                }`}
+              >
                 {item.label}
               </span>
             </button>
@@ -74,3 +73,4 @@ export const Navigation: React.FC<NavigationProps> = ({
     </nav>
   );
 };
+

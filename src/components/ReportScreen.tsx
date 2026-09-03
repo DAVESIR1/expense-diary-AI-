@@ -22,6 +22,7 @@ interface ReportScreenProps {
   categories: Category[];
   t: TranslationStrings;
   currency: string;
+  currentLang?: string;
 }
 
 export const ReportScreen: React.FC<ReportScreenProps> = ({
@@ -29,7 +30,9 @@ export const ReportScreen: React.FC<ReportScreenProps> = ({
   categories,
   t,
   currency,
+  currentLang = 'en',
 }) => {
+  const isGu = currentLang === 'gu';
   // Period filter
   const [period, setPeriod] = useState<ReportPeriod>('month');
   const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split('T')[0]);
@@ -71,15 +74,16 @@ export const ReportScreen: React.FC<ReportScreenProps> = ({
 
   // Available column metadata
   const columnDefs = [
-    { id: 'date', label: 'તારીખ / સમય (Date)', minWidth: '100px' },
-    { id: 'income', label: 'આવક (Income)', minWidth: '110px' },
-    { id: 'incomeSource', label: 'આવકનો સ્ત્રોત (Source)', minWidth: '120px' },
-    { id: 'expense', label: 'જાવક (Expense)', minWidth: '110px' },
-    { id: 'expenseSource', label: 'જાવકનો સ્ત્રોત (Category)', minWidth: '120px' },
-    { id: 'personOrMobile', label: 'વ્યક્તિ / મોબાઈલ (Person)', minWidth: '130px' },
-    { id: 'paymentMode', label: 'ચૂકવણી પદ્ધતિ (Mode)', minWidth: '100px' },
-    { id: 'notes', label: 'નોંધ (Notes)', minWidth: '140px' },
+    { id: 'date', label: isGu ? 'તારીખ / સમય' : 'Date / Time', minWidth: '100px' },
+    { id: 'income', label: isGu ? 'આવક' : 'Income', minWidth: '110px' },
+    { id: 'incomeSource', label: isGu ? 'આવકનો સ્ત્રોત' : 'Income Source', minWidth: '120px' },
+    { id: 'expense', label: isGu ? 'ખર્ચ' : 'Expense', minWidth: '110px' },
+    { id: 'expenseSource', label: isGu ? 'ખર્ચનો સ્ત્રોત' : 'Expense Category', minWidth: '120px' },
+    { id: 'personOrMobile', label: isGu ? 'વ્યક્તિ / મોબાઈલ' : 'Person / Mobile', minWidth: '130px' },
+    { id: 'paymentMode', label: isGu ? 'ચૂકવણી પદ્ધતિ' : 'Payment Mode', minWidth: '100px' },
+    { id: 'notes', label: isGu ? 'નોંધ' : 'Notes', minWidth: '140px' },
   ];
+
 
   const toggleColumn = (colId: string) => {
     if (selectedColumns.includes(colId)) {
@@ -202,16 +206,16 @@ export const ReportScreen: React.FC<ReportScreenProps> = ({
   // EXPORT 3: Text (.txt) formatted report
   const handleExportText = () => {
     let txt = `=========================================================================\n`;
-    txt += `                    EXPENSE DIARY AI - નાણાકીય રિપોર્ટ                    \n`;
+    txt += `                    EXPENSE DIARY AI - FINANCIAL REPORT                  \n`;
     txt += `=========================================================================\n`;
-    txt += `તારીખ: ${new Date().toLocaleDateString()} | સમયગાળો: ${period.toUpperCase()}\n`;
-    txt += `કુલ આવક: ${currency}${totalIncome.toLocaleString()} | કુલ ખર્ચ: ${currency}${totalExpense.toLocaleString()} | ચોખ્ખી બચત: ${currency}${netSavings.toLocaleString()}\n`;
-    txt += `કુલ વ્યવહારો: ${filteredData.length}\n`;
+    txt += `${isGu ? 'તારીખ' : 'Date'}: ${new Date().toLocaleDateString()} | ${isGu ? 'સમયગાળો' : 'Period'}: ${period.toUpperCase()}\n`;
+    txt += `${t.totalIncome}: ${currency}${totalIncome.toLocaleString()} | ${t.totalExpense}: ${currency}${totalExpense.toLocaleString()} | ${t.netSavings}: ${currency}${netSavings.toLocaleString()}\n`;
+    txt += `${isGu ? 'કુલ વ્યવહારો' : 'Total Transactions'}: ${filteredData.length}\n`;
     txt += `-------------------------------------------------------------------------\n`;
-    txt += `તારીખ       | પ્રકાર | રકમ         | વિગત               | કેટેગરી\n`;
+    txt += `${isGu ? 'તારીખ' : 'Date'}       | ${isGu ? 'પ્રકાર' : 'Type'}   | ${isGu ? 'રકમ' : 'Amount'}      | ${isGu ? 'વિગત' : 'Title'}             | ${isGu ? 'કેટેગરી' : 'Category'}\n`;
     txt += `-------------------------------------------------------------------------\n`;
     filteredData.forEach((tx) => {
-      const typeLabel = tx.type === 'income' ? 'આવક' : 'ખર્ચ';
+      const typeLabel = tx.type === 'income' ? t.income : t.expense;
       const amtStr = `${currency}${tx.amount}`.padEnd(11, ' ');
       const titleStr = tx.title.substring(0, 18).padEnd(19, ' ');
       txt += `${tx.date} | ${typeLabel.padEnd(6, ' ')} | ${amtStr} | ${titleStr} | ${tx.category}\n`;
@@ -252,11 +256,11 @@ export const ReportScreen: React.FC<ReportScreenProps> = ({
     // Title
     ctx.fillStyle = '#1C1917';
     ctx.font = 'bold 26px sans-serif';
-    ctx.fillText('Expense Diary AI - નાણાકીય હિસાબ રિપોર્ટ', 40, 55);
+    ctx.fillText(isGu ? 'Expense Diary AI - નાણાકીય હિસાબ રિપોર્ટ' : 'Expense Diary AI - Financial Report', 40, 55);
 
     ctx.fillStyle = '#78716C';
     ctx.font = '14px sans-serif';
-    ctx.fillText(`સમયગાળો: ${period} | જનરેટ તારીખ: ${new Date().toLocaleDateString()}`, 40, 85);
+    ctx.fillText(`${isGu ? 'સમયગાળો' : 'Period'}: ${period} | ${isGu ? 'જનરેટ તારીખ' : 'Generated'}: ${new Date().toLocaleDateString()}`, 40, 85);
 
     // Summary Box
     ctx.fillStyle = '#FFFFFF';
@@ -269,22 +273,22 @@ export const ReportScreen: React.FC<ReportScreenProps> = ({
 
     ctx.fillStyle = '#059669';
     ctx.font = 'bold 18px sans-serif';
-    ctx.fillText(`કુલ આવક: ${currency}${totalIncome.toLocaleString()}`, 65, 150);
+    ctx.fillText(`${t.totalIncome}: ${currency}${totalIncome.toLocaleString()}`, 65, 150);
 
     ctx.fillStyle = '#DC2626';
-    ctx.fillText(`કુલ ખર્ચ: ${currency}${totalExpense.toLocaleString()}`, 380, 150);
+    ctx.fillText(`${t.totalExpense}: ${currency}${totalExpense.toLocaleString()}`, 380, 150);
 
     ctx.fillStyle = '#1C1917';
-    ctx.fillText(`ચોખ્ખી બચત: ${currency}${netSavings.toLocaleString()}`, 700, 150);
+    ctx.fillText(`${t.netSavings}: ${currency}${netSavings.toLocaleString()}`, 700, 150);
 
     // Table Header
     ctx.fillStyle = '#292524';
     ctx.font = 'bold 14px sans-serif';
-    ctx.fillText('તારીખ', 50, 225);
-    ctx.fillText('પ્રકાર', 160, 225);
-    ctx.fillText('વિગત / શીર્ષક', 260, 225);
-    ctx.fillText('કેટેગરી', 530, 225);
-    ctx.fillText('રકમ', 830, 225);
+    ctx.fillText(isGu ? 'તારીખ' : 'Date', 50, 225);
+    ctx.fillText(isGu ? 'પ્રકાર' : 'Type', 160, 225);
+    ctx.fillText(isGu ? 'વિગત / શીર્ષક' : 'Title / Item', 260, 225);
+    ctx.fillText(isGu ? 'કેટેગરી' : 'Category', 530, 225);
+    ctx.fillText(isGu ? 'રકમ' : 'Amount', 830, 225);
 
     ctx.strokeStyle = '#D6D3D1';
     ctx.beginPath();
@@ -309,7 +313,7 @@ export const ReportScreen: React.FC<ReportScreenProps> = ({
 
       const isInc = tx.type === 'income';
       ctx.fillStyle = isInc ? '#059669' : '#DC2626';
-      ctx.fillText(isInc ? 'આવક (+)' : 'ખર્ચ (-)', 160, y);
+      ctx.fillText(isInc ? `${t.income} (+)` : `${t.expense} (-)`, 160, y);
 
       ctx.fillStyle = '#1C1917';
       ctx.fillText(tx.title.substring(0, 32), 260, y);
@@ -328,6 +332,7 @@ export const ReportScreen: React.FC<ReportScreenProps> = ({
     link.href = canvas.toDataURL('image/png');
     link.click();
   };
+
 
   // Theme styling classes for preview container
   const getThemeContainerClass = () => {
