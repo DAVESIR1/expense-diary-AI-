@@ -49,12 +49,16 @@ jobs:
             npx --yes @capacitor/cli sync android
           fi
 
-      - name: Fix Android SDK and Gradle Properties
+      - name: Fix Android SDK, Remove Cordova Conflict and Exclude Duplicates
         run: |
           sed -i 's/compileSdkVersion = [0-9]*/compileSdkVersion = 35/g' android/variables.gradle 2>/dev/null || true
           sed -i 's/targetSdkVersion = [0-9]*/targetSdkVersion = 35/g' android/variables.gradle 2>/dev/null || true
-          echo "android.enableJetifier=true" >> android/gradle.properties 2>/dev/null || true
+          sed -i '/android.enableJetifier/d' android/gradle.properties 2>/dev/null || true
+          echo "android.enableJetifier=false" >> android/gradle.properties 2>/dev/null || true
           echo "org.gradle.jvmargs=-Xmx2048m" >> android/gradle.properties 2>/dev/null || true
+          sed -i "/capacitor-cordova-android-plugins/d" android/settings.gradle 2>/dev/null || true
+          sed -i "/capacitor-cordova-android-plugins/d" android/app/build.gradle 2>/dev/null || true
+          echo "configurations.all { exclude group: 'org.jetbrains.kotlin', module: 'kotlin-stdlib-jdk7'; exclude group: 'org.jetbrains.kotlin', module: 'kotlin-stdlib-jdk8' }" >> android/app/build.gradle
 
       - name: Make Gradle executable
         run: chmod +x android/gradlew
