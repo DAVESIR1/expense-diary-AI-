@@ -31,14 +31,30 @@ jobs:
       - name: Accept Android Licenses
         run: yes | sdkmanager --licenses || true
 
-      - name: Install NPM Dependencies
+      - name: Install Dependencies
         run: npm install
 
       - name: Build Web Application
         run: npm run build
 
-      - name: Sync Capacitor Android
-        run: npx cap sync android
+      - name: Setup Capacitor and Android Project
+        run: |
+          npm install @capacitor/core @capacitor/android @capacitor/cli
+          if [ ! -f "capacitor.config.json" ]; then
+            echo '{"appId":"com.expensediary.ai","appName":"Expense Diary","webDir":"dist","server":{"androidScheme":"https"}}' > capacitor.config.json
+          fi
+          if [ ! -d "android" ]; then
+            npx --yes @capacitor/cli add android
+          else
+            npx --yes @capacitor/cli sync android
+          fi
+
+      - name: Adjust Android SDK version
+        run: |
+          if [ -f "android/variables.gradle" ]; then
+            sed -i 's/compileSdkVersion = [0-9]*/compileSdkVersion = 35/g' android/variables.gradle
+            sed -i 's/targetSdkVersion = [0-9]*/targetSdkVersion = 35/g' android/variables.gradle
+          fi
 
       - name: Make Gradle executable
         run: chmod +x android/gradlew
