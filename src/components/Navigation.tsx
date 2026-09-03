@@ -47,7 +47,9 @@ export const Navigation: React.FC<NavigationProps> = ({
               key={item.id}
               id={`bottom-nav-${item.id}`}
               onClick={() => onTabChange(item.id)}
-              className={`relative flex flex-col items-center justify-center py-1.5 px-3 rounded-xl transition-all duration-150 ${
+              aria-label={`${item.label}`}
+              aria-current={isActive ? 'page' : undefined}
+              className={`relative flex flex-col items-center justify-center touch-target rounded-xl transition-all duration-150 ${
                 isActive
                   ? 'text-[#6C5CE7] font-bold scale-102 bg-[#F4F1FD]'
                   : 'text-[#B2BEC3] hover:text-[#636E72] hover:bg-[#F9FBFC]'
@@ -55,7 +57,7 @@ export const Navigation: React.FC<NavigationProps> = ({
             >
               {/* Icon with bold theme stroke */}
               <div className="relative">
-                <Icon className={`w-5 h-5 ${isActive ? 'stroke-[2.5]' : 'stroke-[1.75]'}`} />
+                <Icon className={`w-6 h-6 ${isActive ? 'stroke-[2.5]' : 'stroke-[1.75]'}`} aria-hidden="true" />
                 {Boolean(item.badge && item.badge > 0) && (
                   <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-[#1976D2] border-2 border-white animate-pulse" />
                 )}

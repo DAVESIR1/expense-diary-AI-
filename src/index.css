@@ -1,1 +1,27 @@
 @import "tailwindcss";
+
+:root{
+	--focus-ring: 3px;
+}
+
+/* Improved focus styles for keyboard users */
+:where(:focus-visible) {
+	outline: none;
+}
+
+.focus-ring:focus-visible{
+	box-shadow: 0 0 0 var(--focus-ring) rgba(99,102,241,0.18), 0 0 0 calc(var(--focus-ring) + 2px) rgba(99,102,241,0.12);
+	border-radius: 12px;
+}
+
+/* Larger touch targets for mobile */
+.touch-target{ padding: 0.75rem 0.75rem; min-height:44px; min-width:44px; }
+
+/* Respect user reduced motion preference */
+@media (prefers-reduced-motion: reduce){
+	*{ animation-duration: 0.01ms !important; animation-iteration-count:1 !important; transition-duration:0.01ms !important; }
+}
+
+/* Accessible visually-hidden utility */
+.sr-only{ position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
+

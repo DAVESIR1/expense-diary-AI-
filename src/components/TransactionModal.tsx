@@ -22,6 +22,20 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
   t,
   currency,
 }) => {
+  const amountRef = React.useRef<HTMLInputElement | null>(null);
+
+  React.useEffect(() => {
+    function onKey(e: KeyboardEvent){
+      if(e.key === 'Escape') onClose();
+    }
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  React.useEffect(()=>{
+    // focus amount for quicker entry
+    setTimeout(()=> amountRef.current?.focus(), 50);
+  }, []);
   const [amount, setAmount] = useState('');
   const [title, setTitle] = useState('');
   const [category, setCategory] = useState(
@@ -81,10 +95,15 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
+      role="presentation"
     >
       <div
         id="transaction-modal-card"
         className="w-full max-w-lg rounded-[28px] bg-white border border-[#E1E8ED] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-150"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="transaction-modal-title"
+        tabIndex={-1}
       >
         {/* Header with Bold Typography tone */}
         <div
@@ -104,6 +123,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
               className={`text-xl font-bold ${
                 isIncome ? 'text-[#1B4332]' : 'text-[#742A2A]'
               }`}
+              id="transaction-modal-title"
             >
               {isIncome ? t.addIncome : t.addExpense}
             </h2>
@@ -129,14 +149,15 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
                 {currency}
               </span>
               <input
+                ref={amountRef}
                 id="transaction-amount-input"
                 type="number"
                 step="any"
                 required
-                autoFocus
                 placeholder="0.00"
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
+                aria-label={t.amount}
                 className={`w-full pl-11 pr-4 py-3.5 text-3xl font-bold tracking-tight rounded-2xl border transition-colors outline-none font-mono ${
                   isIncome
                     ? 'border-[#D1F7D9] focus:border-[#2D6A4F] text-[#1B4332] bg-[#EBFBEE]/30'
