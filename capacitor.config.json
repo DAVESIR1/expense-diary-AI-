@@ -1,0 +1,10 @@
+{
+  "appId": "com.expensediary.ai",
+  "appName": "Expense Diary",
+  "webDir": "dist",
+  "versionCode": 1,
+  "versionName": "1.0.0",
+  "server": {
+    "androidScheme": "https"
+  }
+}

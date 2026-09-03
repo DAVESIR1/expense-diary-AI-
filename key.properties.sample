@@ -1,0 +1,11 @@
+# Sample key.properties for Android signing
+# Create a file named key.properties (DO NOT COMMIT your real keystore or passwords)
+# Place it at the project root, then run the Android build.
+
+storeFile=keystore.jks
+storePassword=changeit
+keyAlias=upload
+keyPassword=changeit
+
+# To generate a keystore locally (replace alias and passwords):
+# keytool -genkeypair -v -keystore keystore.jks -alias upload -keyalg RSA -keysize 2048 -validity 10000

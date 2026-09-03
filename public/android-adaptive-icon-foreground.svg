@@ -1,0 +1,8 @@
+<!-- Foreground SVG for adaptive icon - use as is or edit colors -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <!-- Keep the brand mark from main icon -->
+  <path d="M128 120C128 106.745 138.745 96 152 96H360C373.255 96 384 106.745 384 120V392C384 405.255 373.255 416 360 416H152C138.745 416 128 405.255 128 392V120Z" stroke="#3F3F46" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M176 96V416" stroke="#D4D4D8" stroke-width="8" stroke-dasharray="12 12"/>
+  <path d="M240 240C240 210 270 180 310 180C310 210 280 240 240 240Z" fill="#D1FAE5" stroke="#10B981" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M228 296H288M228 320H276M228 296C244 296 256 308 256 324C256 340 244 348 232 352L276 388" stroke="#3F3F46" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
