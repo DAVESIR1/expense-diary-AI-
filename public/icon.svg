@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <rect width="512" height="512" rx="128" fill="#FAF8F5"/>
+  <!-- Minimal refined book spine & cover line art -->
+  <path d="M128 120C128 106.745 138.745 96 152 96H360C373.255 96 384 106.745 384 120V392C384 405.255 373.255 416 360 416H152C138.745 416 128 405.255 128 392V120Z" stroke="#3F3F46" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- Gentle spine marker -->
+  <path d="M176 96V416" stroke="#D4D4D8" stroke-width="8" stroke-dasharray="12 12"/>
+  <!-- Soft pastel income leaf / rise subtle arc (green tint) -->
+  <path d="M240 240C240 210 270 180 310 180C310 210 280 240 240 240Z" fill="#D1FAE5" stroke="#10B981" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- Soft minimal Rupee / Currency stroke line art -->
+  <path d="M228 296H288M228 320H276M228 296C244 296 256 308 256 324C256 340 244 348 232 352L276 388" stroke="#3F3F46" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- Delicate AI star / twinkle line -->
+  <path d="M336 290L342 306L358 312L342 318L336 334L330 318L314 312L330 306L336 290Z" fill="#FEF3C7" stroke="#F59E0B" stroke-width="6" stroke-linejoin="round"/>
+</svg>

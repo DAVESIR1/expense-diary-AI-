@@ -1,0 +1,6 @@
+{
+  "name": "Expense Diary AI",
+  "description": "Multi-OS Minimal AI Expense & Income Diary with Smart Automation, 20 Languages, Custom Reports & Offline Tracking",
+  "requestFramePermissions": ["notifications"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
