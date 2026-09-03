@@ -49,39 +49,12 @@ jobs:
             npx --yes @capacitor/cli sync android
           fi
 
-      - name: Fix Android SDK, Gradle properties and Duplicate Classes
+      - name: Fix Android SDK and Gradle Properties
         run: |
-          # 1. Ensure SDK 35
-          if [ -f "android/variables.gradle" ]; then
-            sed -i 's/compileSdkVersion = [0-9]*/compileSdkVersion = 35/g' android/variables.gradle
-            sed -i 's/targetSdkVersion = [0-9]*/targetSdkVersion = 35/g' android/variables.gradle
-          fi
-
-          # 2. Add Jetifier and JVM flags to gradle.properties
-          if [ -f "android/gradle.properties" ]; then
-            echo "android.enableJetifier=true" >> android/gradle.properties
-            echo "org.gradle.jvmargs=-Xmx2048m" >> android/gradle.properties
-          fi
-
-          # 3. Prevent duplicate classes in app/build.gradle packagingOptions
-          if [ -f "android/app/build.gradle" ] && ! grep -q "packagingOptions" android/app/build.gradle; then
-            cat << 'EOF' >> android/app/build.gradle
-
-android {
-    packagingOptions {
-        resources {
-            excludes += ['META-INF/DEPENDENCIES', 'META-INF/LICENSE', 'META-INF/LICENSE.txt', 'META-INF/license.txt', 'META-INF/NOTICE', 'META-INF/NOTICE.txt', 'META-INF/notice.txt', 'META-INF/ASL2.0', 'META-INF/*.kotlin_module']
-            pickFirsts += ['**/*.so', '**/libjsc.so', '**/libc++_shared.so']
-        }
-    }
-}
-configurations.all {
-    resolutionStrategy {
-        preferProjectModules()
-    }
-}
-EOF
-          fi
+          sed -i 's/compileSdkVersion = [0-9]*/compileSdkVersion = 35/g' android/variables.gradle 2>/dev/null || true
+          sed -i 's/targetSdkVersion = [0-9]*/targetSdkVersion = 35/g' android/variables.gradle 2>/dev/null || true
+          echo "android.enableJetifier=true" >> android/gradle.properties 2>/dev/null || true
+          echo "org.gradle.jvmargs=-Xmx2048m" >> android/gradle.properties 2>/dev/null || true
 
       - name: Make Gradle executable
         run: chmod +x android/gradlew
