@@ -438,10 +438,16 @@ public class NativeBridgePlugin extends Plugin {
                 isSecure = km.isDeviceSecure();
             }
 
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                 BiometricManager bm = (BiometricManager) getContext().getSystemService(Context.BIOMETRIC_SERVICE);
                 if (bm != null) {
                     int canAuth = bm.canAuthenticate(BiometricManager.Authenticators.BIOMETRIC_STRONG | BiometricManager.Authenticators.BIOMETRIC_WEAK);
+                    available = (canAuth == BiometricManager.BIOMETRIC_SUCCESS);
+                }
+            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                BiometricManager bm = (BiometricManager) getContext().getSystemService(Context.BIOMETRIC_SERVICE);
+                if (bm != null) {
+                    int canAuth = bm.canAuthenticate();
                     available = (canAuth == BiometricManager.BIOMETRIC_SUCCESS);
                 }
             } else {
@@ -469,7 +475,7 @@ public class NativeBridgePlugin extends Plugin {
                     BiometricPrompt.Builder builder = new BiometricPrompt.Builder(getContext())
                         .setTitle(title)
                         .setSubtitle(subtitle)
-                        .setNegativeButton(cancelText, getContext().getMainExecutor(), (dialog, which) -> {
+                        .setNegativeButton(cancelText, ContextCompat.getMainExecutor(getContext()), (dialog, which) -> {
                             JSObject res = new JSObject();
                             res.put("success", false);
                             res.put("error", "Cancelled by user");
@@ -479,7 +485,7 @@ public class NativeBridgePlugin extends Plugin {
                     BiometricPrompt prompt = builder.build();
                     CancellationSignal cancelSignal = new CancellationSignal();
 
-                    prompt.authenticate(cancelSignal, getContext().getMainExecutor(), new BiometricPrompt.AuthenticationCallback() {
+                    prompt.authenticate(cancelSignal, ContextCompat.getMainExecutor(getContext()), new BiometricPrompt.AuthenticationCallback() {
                         @Override
                         public void onAuthenticationSucceeded(BiometricPrompt.AuthenticationResult result) {
                             JSObject res = new JSObject();
@@ -699,6 +705,7 @@ public class NativeBridgePlugin extends Plugin {
         boolean hasAction = lower.contains("debited") || lower.contains("credited") || lower.contains("spent") || lower.contains("sent") || lower.contains("received") || lower.contains("paid") || lower.contains("transferred");
         return hasAmount && hasAction;
     }
+}
 `;
 
 safeWrite(path.join(javaSrcDir, 'NativeBridgePlugin.java'), nativePluginCode);
