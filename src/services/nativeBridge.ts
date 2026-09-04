@@ -170,72 +170,98 @@ export const NativeBridgeService = {
 
   /**
    * Save a generated file (CSV, PDF, JSON, etc.) directly to Android Downloads directory.
+   * Supports both object-style and direct arguments (fileName, content, mimeType).
    */
-  async saveFileToDownloads(options: {
-    fileName: string;
-    mimeType: string;
-    base64Data?: string;
-    textContent?: string;
-  }): Promise<boolean> {
+  async saveFileToDownloads(
+    fileNameOrOptions: string | { fileName: string; mimeType: string; base64Data?: string; textContent?: string },
+    textContentArg?: string,
+    mimeTypeArg?: string
+  ): Promise<{ success: boolean; filePath?: string; fileName?: string }> {
+    let opts: { fileName: string; mimeType: string; base64Data?: string; textContent?: string };
+    if (typeof fileNameOrOptions === 'string') {
+      opts = {
+        fileName: fileNameOrOptions,
+        textContent: textContentArg || '',
+        mimeType: mimeTypeArg || 'text/plain',
+      };
+    } else {
+      opts = fileNameOrOptions;
+    }
+
     try {
-      const res = await NativeBridgeImpl.saveFileToDownloads(options);
-      return !!res.success;
+      const res = await NativeBridgeImpl.saveFileToDownloads(opts);
+      if (res && res.success) {
+        return res;
+      }
+      return { success: !!res?.success, filePath: res?.filePath, fileName: opts.fileName };
     } catch {
       // Web browser fallback: standard blob download link
       try {
         let blob: Blob;
-        if (options.base64Data) {
-          const byteChars = atob(options.base64Data);
+        if (opts.base64Data) {
+          const byteChars = atob(opts.base64Data);
           const byteNumbers = new Array(byteChars.length);
           for (let i = 0; i < byteChars.length; i++) {
             byteNumbers[i] = byteChars.charCodeAt(i);
           }
           const byteArray = new Uint8Array(byteNumbers);
-          blob = new Blob([byteArray], { type: options.mimeType });
+          blob = new Blob([byteArray], { type: opts.mimeType });
         } else {
-          blob = new Blob([options.textContent || ''], { type: options.mimeType });
+          blob = new Blob([opts.textContent || ''], { type: opts.mimeType });
         }
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = options.fileName;
+        a.download = opts.fileName;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
-        return true;
+        return { success: true, fileName: opts.fileName };
       } catch {
-        return false;
+        return { success: false };
       }
     }
   },
 
   /**
    * Share a generated file (or text) directly via Android System Share sheet.
+   * Supports both object-style and direct arguments (fileName, content, mimeType, title).
    */
-  async shareFile(options: {
-    fileName: string;
-    mimeType: string;
-    base64Data?: string;
-    textContent?: string;
-    title?: string;
-  }): Promise<boolean> {
+  async shareFile(
+    fileNameOrOptions: string | { fileName: string; mimeType: string; base64Data?: string; textContent?: string; title?: string },
+    textContentArg?: string,
+    mimeTypeArg?: string,
+    titleArg?: string
+  ): Promise<{ success: boolean }> {
+    let opts: { fileName: string; mimeType: string; base64Data?: string; textContent?: string; title?: string };
+    if (typeof fileNameOrOptions === 'string') {
+      opts = {
+        fileName: fileNameOrOptions,
+        textContent: textContentArg || '',
+        mimeType: mimeTypeArg || 'text/plain',
+        title: titleArg || fileNameOrOptions,
+      };
+    } else {
+      opts = fileNameOrOptions;
+    }
+
     try {
-      const res = await NativeBridgeImpl.shareFile(options);
-      return !!res.success;
+      const res = await NativeBridgeImpl.shareFile(opts);
+      return { success: !!res?.success };
     } catch {
       if (navigator.share) {
         try {
           await navigator.share({
-            title: options.title || options.fileName,
-            text: options.textContent,
+            title: opts.title || opts.fileName,
+            text: opts.textContent,
           });
-          return true;
+          return { success: true };
         } catch {
-          return false;
+          return { success: false };
         }
       }
-      return false;
+      return { success: false };
     }
   },
 };

@@ -507,7 +507,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
             <span>{isGu ? 'Import Backup Data (બેકઅપ ઇમ્પોર્ટ)' : 'Import Backup Data'}</span>
             <input
               type="file"
-              accept=".edb,.json"
+              accept=".edb,.json,application/json,text/plain,*/*"
               onChange={handleFileSelectForRestore}
               className="hidden"
             />

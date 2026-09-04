@@ -334,13 +334,22 @@ export const ReportScreen: React.FC<ReportScreenProps> = ({
       const htmlContent = generateHtmlReport();
       const filename = `Expense_Report_${period}_${dateStr}.html`;
       try {
-        await NativeBridgeService.saveFileToDownloads(filename, htmlContent, 'text/html');
+        const res = await NativeBridgeService.saveFileToDownloads(filename, htmlContent, 'text/html');
+        if (res && res.success) {
+          showExportNotice(
+            isGu
+              ? `PDF/HTML રિપોર્ટ Downloads ફોલ્ડરમાં સેવ થયો: ${filename}`
+              : `Report saved to Downloads folder: ${filename}`
+          );
+        }
       } catch {}
-      window.print();
+      try {
+        window.print();
+      } catch {}
       showExportNotice(
         isGu
-          ? 'પ્રિન્ટ / PDF ડાયલોગ ખુલી ગયો છે. "Save as PDF" પસંદ કરો.'
-          : 'Print dialog opened. Select "Save as PDF" to save.'
+          ? `રિપોર્ટ Downloads ફોલ્ડરમાં સેવ થયો (${filename})`
+          : `Report saved to Downloads folder (${filename})`
       );
     }
   };

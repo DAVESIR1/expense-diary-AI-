@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { 
   ArrowRight, 
+  ArrowLeft,
   Wallet, 
   User, 
   Globe, 
@@ -10,9 +11,12 @@ import {
   MessageSquareText, 
   Check, 
   Copy, 
-  AlertTriangle,
-  Fingerprint,
-  Clock
+  AlertTriangle, 
+  Fingerprint, 
+  Clock,
+  KeyRound,
+  Upload,
+  RefreshCw
 } from 'lucide-react';
 import { TranslationStrings, LANGUAGES } from '../data/languages';
 import { SecurityConfig } from '../types';
@@ -20,7 +24,8 @@ import {
   generate12WordPassphrase, 
   normalizeWords, 
   hashWithPBKDF2, 
-  isBiometricsAvailable 
+  isBiometricsAvailable,
+  validatePassphrase
 } from '../services/security';
 import { requestNotificationPermission } from '../services/notifications';
 
@@ -45,13 +50,19 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
   onSelectLanguage,
   t,
 }) => {
-  const [step, setStep] = useState<'profile' | 'securityWords' | 'securityPin' | 'permissions'>('profile');
+  const [step, setStep] = useState<'profile' | 'securityWords' | 'securityPin' | 'permissions' | 'restore'>('profile');
 
   // Step 1: Profile
   const [name, setName] = useState('');
   const [currency, setCurrency] = useState('₹');
   const [monthlyBudget, setMonthlyBudget] = useState('');
   const [error, setError] = useState('');
+
+  // Restore Existing Account State
+  const [restoreWordsInput, setRestoreWordsInput] = useState('');
+  const [restoreNewPin, setRestoreNewPin] = useState('');
+  const [restoreConfirmPin, setRestoreConfirmPin] = useState('');
+  const [restoreName, setRestoreName] = useState('');
 
   // Step 2: 12 Words
   const [words, setWords] = useState<string[]>([]);
@@ -145,7 +156,7 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
       pinHash,
       pinSalt,
       biometricsEnabled: biometricsSupported && biometricsEnabled,
-      autoLockMinutes: 5,
+      autoLockMinutes: 0,
       recoveryWordsHash: wordsHash,
       recoveryWordsSalt: wordsSalt,
       diaryLockEnabled: false,
@@ -160,6 +171,77 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
       dailyReminderTime,
       enableDailyReminder,
     });
+  };
+
+  const handlePasteWords = async () => {
+    try {
+      const text = await navigator.clipboard.readText();
+      if (text) {
+        setRestoreWordsInput(text.trim());
+      }
+    } catch {
+      // ignore
+    }
+  };
+
+  const handleRestoreSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+
+    const wordsArr = restoreWordsInput
+      .trim()
+      .toLowerCase()
+      .split(/\s+/)
+      .filter(Boolean);
+
+    const validation = validatePassphrase(wordsArr);
+    if (!validation.isValid) {
+      setError(
+        validation.error ||
+          (isGu ? 'અમાન્ય ૧૨ શબ્દો. કૃપા કરીને બરાબર તપાસો.' : 'Invalid 12 words passphrase.')
+      );
+      return;
+    }
+
+    if (restoreNewPin.length !== 4) {
+      setError(isGu ? 'પિન બરાબર ૪ અંકનો હોવો જોઈએ.' : 'PIN must be exactly 4 digits.');
+      return;
+    }
+
+    if (restoreNewPin !== restoreConfirmPin) {
+      setError(isGu ? 'બંને પિન મેળ ખાતા નથી.' : 'PIN confirmation does not match.');
+      return;
+    }
+
+    try {
+      const { hash: pinHash, salt: pinSalt } = await hashWithPBKDF2(restoreNewPin);
+      const normalized = normalizeWords(wordsArr);
+      const { hash: wordsHash, salt: wordsSalt } = await hashWithPBKDF2(normalized);
+
+      const securityConfig: SecurityConfig = {
+        hasCompletedSetup: true,
+        isLocked: false,
+        pinHash,
+        pinSalt,
+        biometricsEnabled: biometricsSupported,
+        autoLockMinutes: 0,
+        recoveryWordsHash: wordsHash,
+        recoveryWordsSalt: wordsSalt,
+        diaryLockEnabled: false,
+      };
+
+      onComplete({
+        name: restoreName.trim() || (isGu ? 'યુઝર' : 'User'),
+        currency,
+        budget: 0,
+        securityConfig,
+        passphraseWords: wordsArr,
+        dailyReminderTime: '20:00',
+        enableDailyReminder: false,
+      });
+    } catch (err: any) {
+      setError(err?.message || (isGu ? 'પુનઃપ્રાપ્તિ નિષ્ફળ રહી.' : 'Failed to restore.'));
+    }
   };
 
   return (
@@ -180,6 +262,7 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
               {step === 'securityWords' && (isGu ? 'પગલું ૨/૪: રિકવરી કી' : 'Step 2/4: Recovery Key')}
               {step === 'securityPin' && (isGu ? 'પગલું ૩/૪: સુરક્ષા પિન' : 'Step 3/4: Security PIN')}
               {step === 'permissions' && (isGu ? 'પગલું ૪/૪: પરમિશન અને રિમાઇન્ડર' : 'Step 4/4: Setup')}
+              {step === 'restore' && (isGu ? 'ખાતું પુનઃપ્રાપ્ત કરો' : 'Restore Existing Account')}
             </span>
           </div>
 
@@ -306,9 +389,35 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
               type="submit"
               className="w-full mt-2 py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs sm:text-sm shadow-sm transition flex items-center justify-center gap-2 cursor-pointer"
             >
-              <span>{isGu ? 'આગળ વધો' : 'Continue'}</span>
+              <span>{isGu ? 'નવું ખાતું બનાવો (આગળ વધો)' : 'Create New Account (Continue)'}</span>
               <ArrowRight className="w-4 h-4" />
             </button>
+
+            {/* Restore Account Option for returning users */}
+            <div className="pt-2">
+              <div className="relative flex py-2 items-center">
+                <div className="flex-grow border-t border-stone-200"></div>
+                <span className="flex-shrink mx-2 text-[11px] text-stone-400 font-medium">
+                  {isGu ? 'અથવા' : 'OR'}
+                </span>
+                <div className="flex-grow border-t border-stone-200"></div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setError('');
+                  setStep('restore');
+                }}
+                className="w-full py-2.5 px-4 rounded-xl border border-stone-300 hover:bg-stone-50 text-stone-700 font-bold text-xs sm:text-sm transition flex items-center justify-center gap-2 cursor-pointer shadow-xs"
+              >
+                <KeyRound className="w-4 h-4 text-emerald-600" />
+                <span>
+                  {isGu
+                    ? 'જૂનું એકાઉન્ટ પુનઃપ્રાપ્ત કરો (૧૨ શબ્દો દ્વારા)'
+                    : 'Already have an account? Restore via 12 Words'}
+                </span>
+              </button>
+            </div>
           </form>
         )}
 
@@ -575,6 +684,157 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
               <span>{isGu ? 'સેટઅપ પૂર્ણ કરો અને શરૂ કરો' : 'Finish Setup & Start'}</span>
             </button>
           </div>
+        )}
+
+        {/* RESTORE ACCOUNT VIA 12 WORDS */}
+        {step === 'restore' && (
+          <form onSubmit={handleRestoreSubmit} className="space-y-4">
+            <div>
+              <div className="flex items-center gap-2 mb-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setError('');
+                    setStep('profile');
+                  }}
+                  className="p-1 rounded-lg text-stone-500 hover:bg-stone-100 transition cursor-pointer"
+                >
+                  <ArrowLeft className="w-4 h-4" />
+                </button>
+                <h2 className="text-xl font-bold text-stone-900 tracking-tight">
+                  {isGu ? 'એકાઉન્ટ પુનઃપ્રાપ્ત કરો' : 'Restore Existing Account'}
+                </h2>
+              </div>
+              <p className="text-stone-500 text-xs ml-6">
+                {isGu
+                  ? 'તમારા ૧૨ ગુપ્ત શબ્દો દાખલ કરીને તમારું એકાઉન્ટ ફરીથી સક્રિય કરો.'
+                  : 'Enter your 12 secret recovery words to restore access to your account.'}
+              </p>
+            </div>
+
+            <div className="bg-emerald-50/70 border border-emerald-200/90 rounded-2xl p-3 text-xs text-emerald-950 space-y-1">
+              <div className="flex items-center gap-1.5 font-bold text-emerald-900">
+                <KeyRound className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span>{isGu ? '૧૨ ગુપ્ત શબ્દો (Passphrase)' : '12 Secret Recovery Words'}</span>
+              </div>
+              <p className="text-[11px] leading-relaxed text-emerald-900/90">
+                {isGu
+                  ? 'શબ્દો વચ્ચે એક સ્પેસ રાખીને ૧૨ શબ્દો લખો અથવા નીચે આપેલા બટનથી પેસ્ટ કરો.'
+                  : 'Separate each word with a single space or click the paste button below.'}
+              </p>
+            </div>
+
+            <div>
+              <div className="flex justify-between items-center mb-1.5">
+                <label className="text-xs font-semibold uppercase tracking-wider text-stone-600">
+                  {isGu ? '૧૨ ગુપ્ત શબ્દો' : '12 Secret Words'}
+                </label>
+                <button
+                  type="button"
+                  onClick={handlePasteWords}
+                  className="text-xs font-bold text-emerald-700 hover:text-emerald-800 flex items-center gap-1 cursor-pointer"
+                >
+                  <Copy className="w-3.5 h-3.5" />
+                  <span>{isGu ? 'ક્લિપબોર્ડમાંથી પેસ્ટ કરો' : 'Paste from clipboard'}</span>
+                </button>
+              </div>
+              <textarea
+                rows={3}
+                required
+                value={restoreWordsInput}
+                onChange={(e) => setRestoreWordsInput(e.target.value)}
+                placeholder={
+                  isGu
+                    ? 'દા.ત. apple banana cherry dog elephant fox grape horse igloo jaguar kite lion'
+                    : 'e.g. apple banana cherry dog elephant fox grape horse igloo jaguar kite lion'
+                }
+                className="w-full p-3 rounded-xl border border-stone-200 focus:border-emerald-500 outline-none text-xs sm:text-sm font-mono leading-relaxed"
+                autoFocus
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold uppercase tracking-wider text-stone-600 mb-1.5">
+                {isGu ? 'તમારું નામ (વૈકલ્પિક)' : 'Your Name (Optional)'}
+              </label>
+              <div className="relative">
+                <User className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-400" />
+                <input
+                  type="text"
+                  value={restoreName}
+                  onChange={(e) => setRestoreName(e.target.value)}
+                  placeholder={isGu ? 'દા.ત. અજય પટેલ' : 'e.g. Alex Smith'}
+                  className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-stone-200 focus:border-emerald-500 outline-none text-xs sm:text-sm font-medium"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-stone-600 mb-1.5">
+                  {isGu ? 'નવો ૪-અંકનો પિન' : 'New 4-digit PIN'}
+                </label>
+                <div className="relative">
+                  <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-400" />
+                  <input
+                    type="password"
+                    maxLength={4}
+                    inputMode="numeric"
+                    required
+                    value={restoreNewPin}
+                    onChange={(e) => setRestoreNewPin(e.target.value.replace(/\D/g, ''))}
+                    placeholder="••••"
+                    className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-stone-200 focus:border-emerald-500 outline-none text-sm font-mono tracking-widest text-center"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-stone-600 mb-1.5">
+                  {isGu ? 'પિન ખાતરી કરો' : 'Confirm PIN'}
+                </label>
+                <div className="relative">
+                  <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-400" />
+                  <input
+                    type="password"
+                    maxLength={4}
+                    inputMode="numeric"
+                    required
+                    value={restoreConfirmPin}
+                    onChange={(e) => setRestoreConfirmPin(e.target.value.replace(/\D/g, ''))}
+                    placeholder="••••"
+                    className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-stone-200 focus:border-emerald-500 outline-none text-sm font-mono tracking-widest text-center"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-amber-50/70 border border-amber-200/90 rounded-2xl p-3 text-[11px] text-amber-900 leading-relaxed">
+              {isGu
+                ? '💡 એકાઉન્ટ સેટ થયા પછી, સેટિંગ્સ > ડેટા બેકઅપમાંથી તમે જૂની બેકઅપ ફાઈલ (.edb) પણ ઈમ્પોર્ટ કરી શકશો.'
+                : '💡 Once your account is restored, you can import your existing encrypted backup (.edb file) from Settings > Backup & Restore.'}
+            </div>
+
+            <button
+              type="submit"
+              className="w-full mt-2 py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs sm:text-sm shadow-sm transition flex items-center justify-center gap-2 cursor-pointer"
+            >
+              <Check className="w-4 h-4" />
+              <span>{isGu ? 'એકાઉન્ટ પુનઃપ્રાપ્ત કરો અને શરૂ કરો' : 'Restore & Enter App'}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setError('');
+                setStep('profile');
+              }}
+              className="w-full py-2.5 px-4 rounded-xl text-stone-600 hover:text-stone-800 font-semibold text-xs transition flex items-center justify-center gap-1 cursor-pointer"
+            >
+              <ArrowLeft className="w-3.5 h-3.5" />
+              <span>{isGu ? 'નવા એકાઉન્ટ માટે પાછા જાઓ' : 'Back to New Account Setup'}</span>
+            </button>
+          </form>
         )}
       </div>
     </div>

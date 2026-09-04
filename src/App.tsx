@@ -73,7 +73,7 @@ export default function App() {
       hasCompletedSetup: false,
       isLocked: false,
       biometricsEnabled: false,
-      autoLockMinutes: 5,
+      autoLockMinutes: 0,
       diaryLockEnabled: false,
     };
   });
@@ -194,6 +194,13 @@ export default function App() {
 
   const handleScanSMS = async (): Promise<number> => {
     try {
+      // Check native permissions first; request if missing
+      const permStatus = await NativeBridgeService.checkPermissions();
+      if (!permStatus.sms) {
+        const req = await NativeBridgeService.requestAllNativePermissions();
+        if (!req.sms) return 0;
+      }
+
       const messages = await NativeBridgeService.readRecentBankSMS();
       if (!messages || messages.length === 0) return 0;
 
@@ -299,7 +306,7 @@ export default function App() {
   const t = getTranslation(currentLang);
   const isGu = currentLang === 'gu';
 
-  // Auto-Lock Management
+  // Auto-Lock Management (Locks immediately when app goes to background / minimized)
   useEffect(() => {
     let lastHiddenTimestamp = 0;
 
@@ -308,9 +315,13 @@ export default function App() {
 
       if (document.visibilityState === 'hidden') {
         lastHiddenTimestamp = Date.now();
+        // If set to 0 or immediately on exit, lock right away
+        if ((securityConfig.autoLockMinutes ?? 0) <= 0) {
+          setIsAppLocked(true);
+        }
       } else if (document.visibilityState === 'visible') {
-        const timeoutMinutes = securityConfig.autoLockMinutes;
-        if (timeoutMinutes === 0) {
+        const timeoutMinutes = securityConfig.autoLockMinutes ?? 0;
+        if (timeoutMinutes <= 0) {
           setIsAppLocked(true);
         } else if (timeoutMinutes > 0 && lastHiddenTimestamp > 0) {
           const elapsedMinutes = (Date.now() - lastHiddenTimestamp) / 60000;
@@ -321,8 +332,19 @@ export default function App() {
       }
     };
 
+    const handlePageHide = () => {
+      if (!securityConfig.hasCompletedSetup || !securityConfig.pinHash) return;
+      if ((securityConfig.autoLockMinutes ?? 0) <= 0) {
+        setIsAppLocked(true);
+      }
+    };
+
     document.addEventListener('visibilitychange', handleVisibilityChange);
-    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('pagehide', handlePageHide);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('pagehide', handlePageHide);
+    };
   }, [securityConfig]);
 
   // Auto-request native permissions on first launch (§7)
