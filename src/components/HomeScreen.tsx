@@ -1,19 +1,19 @@
-import React, { useState } from 'react';
 import { 
   Plus, 
   ArrowDownLeft, 
   ArrowUpRight, 
   Search, 
   Trash2, 
-  Sparkles, 
   CheckCircle2, 
   AlertCircle,
   Clock,
   Building2,
   Phone,
-  Wallet
+  Wallet,
+  RefreshCw,
+  X
 } from 'lucide-react';
-import { Transaction, TransactionType, PendingAIMessage, Category } from '../types';
+import { Transaction, TransactionType, PendingAIMessage, Category, UserProfile } from '../types';
 import { TranslationStrings } from '../data/languages';
 
 interface HomeScreenProps {
@@ -26,6 +26,9 @@ interface HomeScreenProps {
   categories: Category[];
   t: TranslationStrings;
   currency: string;
+  currentLang?: string;
+  profile?: UserProfile;
+  onTriggerScan?: () => Promise<number>;
 }
 
 export const HomeScreen: React.FC<HomeScreenProps> = ({
@@ -38,11 +41,39 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
   categories,
   t,
   currency,
+  currentLang = 'en',
+  profile,
+  onTriggerScan,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedFilterType, setSelectedFilterType] = useState<'all' | 'income' | 'expense'>('all');
   const [editingCategoryMsgId, setEditingCategoryMsgId] = useState<string | null>(null);
   const [tempCategory, setTempCategory] = useState<string>('');
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [showOfflinePrompt, setShowOfflinePrompt] = useState(false);
+  const [touchStartY, setTouchStartY] = useState(0);
+
+  const isGu = currentLang === 'gu';
+
+  const handlePullRefresh = async () => {
+    if (isRefreshing) return;
+    setIsRefreshing(true);
+    setShowOfflinePrompt(false);
+    try {
+      if (onTriggerScan) {
+        const found = await onTriggerScan();
+        if (found === 0) {
+          setShowOfflinePrompt(true);
+        }
+      } else {
+        setTimeout(() => setShowOfflinePrompt(true), 600);
+      }
+    } catch {
+      setShowOfflinePrompt(true);
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
 
   // Calculate totals
   const totalIncome = transactions
@@ -72,8 +103,77 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
     return true;
   });
 
+  // Current month expense for budget tracker
+  const currentMonthPrefix = new Date().toISOString().substring(0, 7);
+  const currentMonthExpense = transactions
+    .filter((tx) => tx.type === 'expense' && tx.date.startsWith(currentMonthPrefix))
+    .reduce((sum, item) => sum + item.amount, 0);
+  const monthlyBudgetGoal = profile?.monthlyBudget || 0;
+  const budgetPercentage = monthlyBudgetGoal > 0 ? Math.min(100, Math.round((currentMonthExpense / monthlyBudgetGoal) * 100)) : 0;
+
   return (
-    <div id="home-screen-container" className="space-y-6 pb-28">
+    <div 
+      id="home-screen-container" 
+      className="space-y-5 pb-28"
+      onTouchStart={(e) => setTouchStartY(e.touches[0].clientY)}
+      onTouchEnd={(e) => {
+        const deltaY = e.changedTouches[0].clientY - touchStartY;
+        if (deltaY > 80 && window.scrollY <= 10) {
+          handlePullRefresh();
+        }
+      }}
+    >
+      {/* Pull-to-Refresh & Auto-Scan Trigger Bar */}
+      <div className="flex items-center justify-between px-1">
+        <button
+          onClick={handlePullRefresh}
+          disabled={isRefreshing}
+          className="flex items-center gap-1.5 text-xs font-semibold text-stone-500 hover:text-stone-800 transition cursor-pointer select-none"
+        >
+          <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin text-emerald-600' : 'text-stone-400'}`} />
+          <span>{isRefreshing ? (isGu ? 'SMS સ્કેન થઈ રહ્યા છે...' : 'Scanning SMS...') : (isGu ? 'નીચે ખેંચો અથવા ટેપ કરી SMS તપાસો' : 'Pull down or tap to scan SMS')}</span>
+        </button>
+        {monthlyBudgetGoal > 0 && (
+          <span className="text-[11px] font-bold text-stone-400 font-mono">
+            {isGu ? `બજેટ વપરાશ: ${budgetPercentage}%` : `Budget: ${budgetPercentage}%`}
+          </span>
+        )}
+      </div>
+
+      {/* Offline Expense Query Prompt (When no new SMS detected) */}
+      {showOfflinePrompt && (
+        <div className="p-4 rounded-3xl bg-amber-50/90 border border-amber-200 text-amber-950 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs animate-in fade-in">
+          <div className="space-y-0.5">
+            <p className="font-bold text-amber-900 flex items-center gap-1.5">
+              <AlertCircle className="w-4 h-4 text-amber-600" />
+              <span>{isGu ? 'હાલમાં કોઈ નવો ઓનલાઈન ટ્રાન્ઝેક્શન મળ્યો નથી.' : 'No new online bank transactions found.'}</span>
+            </p>
+            <p className="text-[11px] text-amber-900/90">
+              {isGu
+                ? 'શું તમે તાજેતરમાં કોઈ રોકડ કે ઓફલાઇન ખર્ચ કર્યો છે?'
+                : 'Did you make any recent cash or offline expense?'}
+            </p>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              onClick={() => {
+                setShowOfflinePrompt(false);
+                onOpenAddModal('expense');
+              }}
+              className="px-3.5 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs transition cursor-pointer shadow-xs"
+            >
+              {isGu ? 'હા (ખર્ચ ઉમેરો)' : 'Add Expense'}
+            </button>
+            <button
+              onClick={() => setShowOfflinePrompt(false)}
+              className="px-3 py-1.5 rounded-xl bg-white border border-amber-200 text-amber-800 font-semibold text-xs hover:bg-amber-100 transition cursor-pointer"
+            >
+              {isGu ? 'ના' : 'Dismiss'}
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Pending AI Transaction Approval Banner - ONLY renders when there are real pending items */}
       {pendingAiMessages.length > 0 && (
         <div id="ai-pending-notifications" className="space-y-3">
@@ -87,14 +187,14 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
               >
                 <div className="flex gap-4 sm:gap-5 items-start relative z-10">
                   <div className="p-3 rounded-2xl bg-white text-indigo-600 shadow-xs shrink-0">
-                    <Sparkles className="w-6 h-6 stroke-[2]" />
+                    <CheckCircle2 className="w-6 h-6 stroke-[2]" />
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between gap-2">
                       <h3 className="text-indigo-950 font-bold text-base sm:text-lg flex items-center gap-2">
                         <span>{t.aiConfirmationTitle}</span>
                         <span className="text-[10px] bg-indigo-600 text-white px-2 py-0.5 rounded-full uppercase font-bold tracking-wider">
-                          AI
+                          Smart
                         </span>
                       </h3>
                       <span className="text-xs text-indigo-600/80 font-mono font-medium">
@@ -131,13 +231,13 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                               .filter((c) => c.type === 'both' || c.type === msg.parsedData.type)
                               .map((c) => (
                                 <option key={c.id} value={c.name}>
-                                  {c.name}
+                                  {isGu && c.nameGu ? c.nameGu : c.name}
                                 </option>
                               ))}
                           </select>
                           <button
                             onClick={() => setEditingCategoryMsgId(null)}
-                            className="text-indigo-600 text-xs font-bold px-1.5 hover:underline"
+                            className="text-indigo-600 text-xs font-bold px-1.5 hover:underline cursor-pointer"
                           >
                             ✓
                           </button>
@@ -186,23 +286,35 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
         </div>
       )}
 
-      {/* TOP CARDS: Income & Expense (Soft Green & Soft Red with Large Numbers) */}
+      {/* TOP CARDS: Minimal Income & Expense with Inline Quick Add Buttons */}
       <section id="income-expense-cards-grid" className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">
         {/* Income Card (Soft Green) */}
         <div
           id="home-income-card"
-          className="bg-[#EBFBEE] rounded-3xl p-6 sm:p-7 border border-[#D1F7D9] flex flex-col justify-between min-h-[175px] shadow-xs hover:shadow-sm transition-all"
+          className="bg-[#EBFBEE] rounded-3xl p-6 sm:p-7 border border-[#D1F7D9] flex flex-col justify-between min-h-[160px] shadow-xs hover:shadow-sm transition-all"
         >
-          <div>
-            <p className="text-[#2D6A4F] text-base sm:text-lg font-bold tracking-tight mb-1">
-              {t.income}
-            </p>
-            <h1
-              id="home-total-income-value"
-              className="text-4xl sm:text-5xl font-bold text-[#1B4332] tracking-tight font-mono"
+          <div className="flex items-start justify-between">
+            <div>
+              <p className="text-[#2D6A4F] text-sm sm:text-base font-bold tracking-tight mb-1">
+                {t.income}
+              </p>
+              <h1
+                id="home-total-income-value"
+                className="text-4xl sm:text-5xl font-bold text-[#1B4332] tracking-tight font-mono"
+              >
+                {currency}{totalIncome.toLocaleString()}
+              </h1>
+            </div>
+            {/* Inline Quick Add Button */}
+            <button
+              id="home-inline-add-income-btn"
+              onClick={() => onOpenAddModal('income')}
+              className="px-3 py-1.5 rounded-xl bg-[#2D6A4F] text-white text-xs font-bold shadow-xs hover:bg-[#1B4332] transition flex items-center gap-1 cursor-pointer active:scale-95"
+              title={t.addIncome}
             >
-              {currency}{totalIncome.toLocaleString()}
-            </h1>
+              <Plus className="w-4 h-4 stroke-[2.5]" />
+              <span>{isGu ? 'આવક ઉમેરો' : 'Add'}</span>
+            </button>
           </div>
           
           <div className="flex items-center gap-2 text-[#40916C] text-xs font-semibold mt-3">
@@ -216,18 +328,30 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
         {/* Expense Card (Soft Red) */}
         <div
           id="home-expense-card"
-          className="bg-[#FFF0F0] rounded-3xl p-6 sm:p-7 border border-[#FEE2E2] flex flex-col justify-between min-h-[175px] shadow-xs hover:shadow-sm transition-all"
+          className="bg-[#FFF0F0] rounded-3xl p-6 sm:p-7 border border-[#FEE2E2] flex flex-col justify-between min-h-[160px] shadow-xs hover:shadow-sm transition-all"
         >
-          <div>
-            <p className="text-[#C53030] text-base sm:text-lg font-bold tracking-tight mb-1">
-              {t.expense}
-            </p>
-            <h1
-              id="home-total-expense-value"
-              className="text-4xl sm:text-5xl font-bold text-[#742A2A] tracking-tight font-mono"
+          <div className="flex items-start justify-between">
+            <div>
+              <p className="text-[#C53030] text-sm sm:text-base font-bold tracking-tight mb-1">
+                {t.expense}
+              </p>
+              <h1
+                id="home-total-expense-value"
+                className="text-4xl sm:text-5xl font-bold text-[#742A2A] tracking-tight font-mono"
+              >
+                {currency}{totalExpense.toLocaleString()}
+              </h1>
+            </div>
+            {/* Inline Quick Add Button */}
+            <button
+              id="home-inline-add-expense-btn"
+              onClick={() => onOpenAddModal('expense')}
+              className="px-3 py-1.5 rounded-xl bg-[#C53030] text-white text-xs font-bold shadow-xs hover:bg-[#742A2A] transition flex items-center gap-1 cursor-pointer active:scale-95"
+              title={t.addExpense}
             >
-              {currency}{totalExpense.toLocaleString()}
-            </h1>
+              <Plus className="w-4 h-4 stroke-[2.5]" />
+              <span>{isGu ? 'ખર્ચ ઉમેરો' : 'Add'}</span>
+            </button>
           </div>
 
           <div className="flex items-center gap-2 text-[#C53030] text-xs font-semibold mt-3">
@@ -239,57 +363,53 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
         </div>
       </section>
 
-      {/* Net Balance Banner */}
-      <div
-        id="home-balance-banner"
-        className="flex items-center justify-between px-5 sm:px-6 py-3.5 rounded-2xl bg-white border border-stone-200 shadow-xs"
-      >
-        <div className="flex items-center gap-2.5 text-stone-500">
-          <Wallet className="w-4 h-4 text-stone-400 stroke-[2]" />
-          <span className="text-xs uppercase tracking-wider font-semibold">{t.balance}</span>
+      {/* Net Balance & Monthly Budget Utilization Card */}
+      <div className="space-y-2">
+        <div
+          id="home-balance-banner"
+          className="flex items-center justify-between px-5 sm:px-6 py-3.5 rounded-2xl bg-white border border-stone-200 shadow-xs"
+        >
+          <div className="flex items-center gap-2.5 text-stone-500">
+            <Wallet className="w-4 h-4 text-stone-400 stroke-[2]" />
+            <span className="text-xs uppercase tracking-wider font-semibold">{t.balance}</span>
+          </div>
+          <div className="flex items-baseline gap-1">
+            <span
+              id="home-net-balance-value"
+              className={`text-xl sm:text-2xl font-bold font-mono tracking-tight ${
+                netBalance >= 0 ? 'text-[#1B4332]' : 'text-[#742A2A]'
+              }`}
+            >
+              {currency}{netBalance.toLocaleString()}
+            </span>
+          </div>
         </div>
-        <div className="flex items-baseline gap-1">
-          <span
-            id="home-net-balance-value"
-            className={`text-xl sm:text-2xl font-bold font-mono tracking-tight ${
-              netBalance >= 0 ? 'text-[#1B4332]' : 'text-[#742A2A]'
-            }`}
-          >
-            {currency}{netBalance.toLocaleString()}
-          </span>
-        </div>
+
+        {monthlyBudgetGoal > 0 && (
+          <div className="p-3.5 rounded-2xl bg-white border border-stone-200 shadow-xs space-y-1.5">
+            <div className="flex items-center justify-between text-xs">
+              <span className="font-semibold text-stone-600">
+                {isGu ? 'આ મહિનાનું બજેટ લક્ષ્ય:' : 'Monthly Budget Progress:'}
+              </span>
+              <span className="font-mono font-bold text-stone-800">
+                {currency}{currentMonthExpense.toLocaleString()} / {currency}{monthlyBudgetGoal.toLocaleString()}
+              </span>
+            </div>
+            <div className="w-full bg-stone-100 rounded-full h-2.5 overflow-hidden">
+              <div
+                className={`h-full rounded-full transition-all duration-500 ${
+                  budgetPercentage > 90
+                    ? 'bg-rose-500'
+                    : budgetPercentage > 70
+                    ? 'bg-amber-500'
+                    : 'bg-emerald-500'
+                }`}
+                style={{ width: `${budgetPercentage}%` }}
+              />
+            </div>
+          </div>
+        )}
       </div>
-
-      {/* ACTION BUTTONS: '+' Buttons for Add Income & Add Expense */}
-      <section id="action-buttons-section" className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
-        {/* Add Income Button */}
-        <button
-          id="home-add-income-btn"
-          onClick={() => onOpenAddModal('income')}
-          className="w-full bg-white border-2 border-dashed border-stone-300 rounded-2xl py-4 sm:py-5 flex items-center justify-center gap-3.5 hover:bg-[#EBFBEE]/50 hover:border-[#2D6A4F] transition-all group shadow-xs active:scale-[0.99] cursor-pointer"
-        >
-          <div className="w-9 h-9 rounded-full bg-[#EBFBEE] flex items-center justify-center text-[#2D6A4F] group-hover:scale-110 transition-transform">
-            <Plus className="w-5 h-5 stroke-[2.5]" />
-          </div>
-          <span className="text-sm sm:text-base font-bold text-stone-800 group-hover:text-[#2D6A4F] transition-colors">
-            {t.addIncome}
-          </span>
-        </button>
-
-        {/* Add Expense Button */}
-        <button
-          id="home-add-expense-btn"
-          onClick={() => onOpenAddModal('expense')}
-          className="w-full bg-white border-2 border-dashed border-stone-300 rounded-2xl py-4 sm:py-5 flex items-center justify-center gap-3.5 hover:bg-[#FFF0F0]/50 hover:border-[#C53030] transition-all group shadow-xs active:scale-[0.99] cursor-pointer"
-        >
-          <div className="w-9 h-9 rounded-full bg-[#FFF0F0] flex items-center justify-center text-[#C53030] group-hover:scale-110 transition-transform">
-            <Plus className="w-5 h-5 stroke-[2.5]" />
-          </div>
-          <span className="text-sm sm:text-base font-bold text-stone-800 group-hover:text-[#C53030] transition-colors">
-            {t.addExpense}
-          </span>
-        </button>
-      </section>
 
       {/* TRANSACTIONS SECTION */}
       <section id="recent-transactions-section" className="space-y-4 pt-2">

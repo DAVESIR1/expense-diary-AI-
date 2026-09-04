@@ -116,8 +116,8 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
   };
 
   const handlePinNext = () => {
-    if (pin.length < 4 || pin.length > 6) {
-      setError(isGu ? 'પિન ૪ થી ૬ અંકનો હોવો જોઈએ.' : 'PIN must be 4 to 6 digits.');
+    if (pin.length !== 4) {
+      setError(isGu ? 'પિન બરાબર ૪ અંકનો હોવો જોઈએ.' : 'PIN must be exactly 4 digits.');
       return;
     }
     if (pin !== confirmPin) {
@@ -206,7 +206,7 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
           </div>
         )}
 
-        {/* STEP 1: Profile */}
+        {/* STEP 1: Profile & Language Setup */}
         {step === 'profile' && (
           <form onSubmit={handleProfileNext} className="space-y-4">
             <div>
@@ -217,6 +217,32 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
                 {isGu
                   ? 'તમારી વ્યક્તિગત અને સુરક્ષિત ફાયનાન્શિયલ ડાયરી સેટઅપ કરવા માટે પ્રાથમિક વિગતો આપો.'
                   : 'Let’s set up your private, offline-first financial diary in seconds.'}
+              </p>
+            </div>
+
+            {/* Task 0: Language Selection with Clear Notice */}
+            <div className="bg-indigo-50/70 border border-indigo-200/90 rounded-2xl p-3.5 space-y-2">
+              <div className="flex items-center justify-between">
+                <label className="flex items-center gap-1.5 text-xs font-bold text-indigo-950 uppercase tracking-wider">
+                  <Globe className="w-3.5 h-3.5 text-indigo-600" />
+                  <span>{isGu ? 'તમારી ભાષા પસંદ કરો' : 'Choose Your Language'}</span>
+                </label>
+                <select
+                  value={currentLang}
+                  onChange={(e) => onSelectLanguage(e.target.value)}
+                  className="bg-white border border-indigo-200 text-indigo-950 px-2.5 py-1 rounded-xl outline-none cursor-pointer font-bold text-xs shadow-xs"
+                >
+                  {LANGUAGES.map((l) => (
+                    <option key={l.code} value={l.code}>
+                      {l.nativeName} ({l.name})
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <p className="text-[11px] text-indigo-900/90 leading-relaxed font-medium">
+                {isGu
+                  ? '📢 હવે પછીની તમામ સૂચનાઓ, કેટેગરી અને સેટિંગ આ જ ભાષામાં આવશે. એમ છતાં તમે ઇચ્છો ત્યારે સેટિંગ્સમાંથી ભાષા બદલી શકશો.'
+                  : '📢 All subsequent instructions, categories, and settings will appear in this language. You can change it anytime from Settings.'}
               </p>
             </div>
 
@@ -248,7 +274,7 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
                     key={c.symbol}
                     type="button"
                     onClick={() => setCurrency(c.symbol)}
-                    className={`py-2 px-3 rounded-xl border text-xs font-bold transition flex items-center justify-center gap-1.5 ${
+                    className={`py-2 px-3 rounded-xl border text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer ${
                       currency === c.symbol
                         ? 'border-emerald-500 bg-emerald-50 text-emerald-900'
                         : 'border-stone-200 text-stone-600 hover:bg-stone-50'
@@ -286,7 +312,7 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
           </form>
         )}
 
-        {/* STEP 2: 12-Word Passphrase */}
+        {/* STEP 2: 12-Word Passphrase with Comprehensive Explanation */}
         {step === 'securityWords' && (
           <div className="space-y-4">
             <div>
@@ -295,20 +321,29 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
               </h2>
               <p className="text-stone-500 text-xs mt-1">
                 {isGu
-                  ? 'આ ૧૨ શબ્દો તમારી એપ્લિકેશન અને બેકઅપની મુખ્ય ચાવી છે.'
+                  ? 'આ ૧૨ શબ્દો તમારી એપ્લિકેશન અને બેકઅપની મુખ્ય સુરક્ષા ચાવી છે.'
                   : 'These 12 words form the master key for your encrypted diary and backups.'}
               </p>
             </div>
 
-            <div className="bg-amber-50/80 border border-amber-200 rounded-2xl p-3 text-xs text-amber-900 leading-relaxed flex items-start gap-2">
-              <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-              <div>
-                <strong>{isGu ? 'મહત્વની સૂચના:' : 'Crucial Security Note:'}</strong>{' '}
-                {t.passphraseWarning}
+            <div className="bg-amber-50/90 border border-amber-200 rounded-2xl p-3.5 text-xs text-amber-950 leading-relaxed space-y-1.5">
+              <div className="flex items-center gap-1.5 font-bold text-amber-900">
+                <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                <span>{isGu ? '૧૨ શબ્દોની સુરક્ષા માર્ગદર્શિકા:' : '12-Word Passphrase Guide:'}</span>
               </div>
+              <p className="text-[11px] leading-relaxed">
+                {isGu
+                  ? '• આ ૧૨ ગુપ્ત શબ્દો તમારી ફાયનાન્શિયલ તિજોરીની માસ્ટર ચાવી છે. જો તમે ક્યારેય ૪-અંકનો પિન ભૂલી જાઓ અથવા નવો ફોન બદલો, ત્યારે ફક્ત આ જ શબ્દો દ્વારા તમારો સમગ્ર હિસાબ પાછો મેળવી શકાશે.'
+                  : '• These 12 words are the only master key to decrypt your vault. If you ever forget your PIN or migrate to a new device, these words will restore all data.'}
+              </p>
+              <p className="text-[11px] leading-relaxed font-semibold text-amber-900">
+                {isGu
+                  ? '• આ શબ્દો ક્યારેય કોઈ સાથે શેર કરશો નહીં. તેને કોઈ સુરક્ષિત ડાયરી કે કાગળ પર લખીને રાખો.'
+                  : '• Never share these words with anyone. Write them down and keep them in a safe physical place.'}
+              </p>
             </div>
 
-            {/* Grid */}
+            {/* Grid of 12 words */}
             <div className="grid grid-cols-3 gap-2 bg-stone-50 p-3.5 rounded-2xl border border-stone-200">
               {words.map((w, idx) => (
                 <div
@@ -339,10 +374,10 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
                 onChange={(e) => setHasBackedUpWords(e.target.checked)}
                 className="mt-0.5 w-4 h-4 accent-emerald-600 rounded cursor-pointer"
               />
-              <span className="text-xs text-stone-700 leading-snug">
+              <span className="text-xs text-stone-700 leading-snug font-medium">
                 {isGu
-                  ? 'મેં આ ૧૨ શબ્દો સુરક્ષિત જગ્યાએ લખી લીધા છે.'
-                  : 'I have saved or written down these 12 recovery words in a safe place.'}
+                  ? 'મેં આ ૧૨ શબ્દો સુરક્ષિત કાગળ પર નોંધી લીધા છે અને તેની મહત્વતા સમજી લીધી છે.'
+                  : 'I have safely written down these 12 recovery words and understand their importance.'}
               </span>
             </label>
 
@@ -351,52 +386,57 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
               onClick={handleWordsNext}
               className="w-full py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs sm:text-sm shadow-sm transition flex items-center justify-center gap-2 cursor-pointer"
             >
-              <span>{isGu ? 'આગળ: પિન સેટ કરો' : 'Next: Set PIN'}</span>
+              <span>{isGu ? 'આગળ: ૪-અંક પિન સેટ કરો' : 'Next: Set 4-Digit PIN'}</span>
               <ArrowRight className="w-4 h-4" />
             </button>
           </div>
         )}
 
-        {/* STEP 3: Security PIN */}
+        {/* STEP 3: Security PIN (STRICTLY 4 DIGITS) */}
         {step === 'securityPin' && (
           <div className="space-y-4">
             <div>
               <h2 className="text-xl font-bold text-stone-900 tracking-tight">
-                {t.setPin}
+                {isGu ? 'માસ્ટર ૪-અંક પિન સેટ કરો' : 'Set Master 4-Digit PIN'}
               </h2>
               <p className="text-stone-500 text-xs mt-1">
                 {isGu
-                  ? 'એપ્લિકેશન ખોલવા માટે ૪ થી ૬ અંકનો સુરક્ષા પિન પસંદ કરો.'
-                  : 'Choose a 4 to 6 digit PIN to unlock your diary quickly.'}
+                  ? 'એપ્લિકેશન ખોલવા માટે ફક્ત ૪ અંકનો સુરક્ષા પિન પસંદ કરો (૪ કરતાં વધુ અંક નહીં).'
+                  : 'Choose an exact 4-digit numeric PIN to quickly unlock your diary.'}
               </p>
             </div>
 
             <div className="space-y-3">
               <div>
-                <label className="text-xs font-semibold text-stone-700 block mb-1">
-                  {t.enterPin}
+                <label className="text-xs font-bold text-stone-700 block mb-1">
+                  {isGu ? '૪-અંકનો સુરક્ષા પિન' : '4-Digit Security PIN'}
                 </label>
                 <input
                   type="password"
-                  maxLength={6}
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  maxLength={4}
                   value={pin}
-                  onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))}
+                  onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 4))}
                   placeholder="••••"
-                  className="w-full px-3 py-2.5 text-center text-lg font-mono tracking-widest rounded-xl border border-stone-200 bg-stone-50 outline-none focus:border-emerald-500"
+                  className="w-full px-3 py-2.5 text-center text-xl font-mono tracking-widest rounded-xl border border-stone-200 bg-stone-50 outline-none focus:border-emerald-500 focus:bg-white"
+                  autoFocus
                 />
               </div>
 
               <div>
-                <label className="text-xs font-semibold text-stone-700 block mb-1">
-                  {t.confirmPin}
+                <label className="text-xs font-bold text-stone-700 block mb-1">
+                  {isGu ? 'પિન ફરીથી દાખલ કરો (Confirm)' : 'Confirm 4-Digit PIN'}
                 </label>
                 <input
                   type="password"
-                  maxLength={6}
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  maxLength={4}
                   value={confirmPin}
-                  onChange={(e) => setConfirmPin(e.target.value.replace(/\D/g, ''))}
+                  onChange={(e) => setConfirmPin(e.target.value.replace(/\D/g, '').slice(0, 4))}
                   placeholder="••••"
-                  className="w-full px-3 py-2.5 text-center text-lg font-mono tracking-widest rounded-xl border border-stone-200 bg-stone-50 outline-none focus:border-emerald-500"
+                  className="w-full px-3 py-2.5 text-center text-xl font-mono tracking-widest rounded-xl border border-stone-200 bg-stone-50 outline-none focus:border-emerald-500 focus:bg-white"
                 />
               </div>
             </div>
@@ -427,7 +467,7 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
           </div>
         )}
 
-        {/* STEP 4: Permissions & Daily Reminder */}
+        {/* STEP 4: Permissions & Daily Offline Reminder with Detailed Guidance */}
         {step === 'permissions' && (
           <div className="space-y-4">
             <div>
@@ -442,7 +482,7 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
             </div>
 
             {/* SMS Permission Card */}
-            <div className="p-3.5 rounded-2xl bg-indigo-50/60 border border-indigo-200 space-y-1.5">
+            <div className="p-3.5 rounded-2xl bg-indigo-50/60 border border-indigo-200 space-y-2">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <MessageSquareText className="w-4 h-4 text-indigo-600" />
@@ -456,25 +496,33 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
               </div>
               <p className="text-[11px] text-indigo-900/80 leading-relaxed">
                 {isGu
-                  ? 'UPI અને બેંક SMS આપમેળે ડિટેક્ટ કરી એન્ટ્રી કરશે. જો ન આપો તો પણ તમે મેન્યુઅલી બધું નોંધી શકશો.'
-                  : 'Automatically parses bank SMS to record entries. If denied, manual entry works fully.'}
+                  ? 'UPI અને બેંક SMS આપમેળે ડિટેક્ટ કરી એન્ટ્રી કરશે. ૧-ટેપથી પરમિશન આપતાં જ બેંક મેસેજિસ સ્કેન થશે.'
+                  : 'Automatically parses bank SMS to record entries with 1-tap permission approval.'}
               </p>
               <button
                 type="button"
-                onClick={() => setSmsGranted(true)}
+                onClick={async () => {
+                  try {
+                    const res = await NativeBridgeService.requestAllNativePermissions();
+                    setSmsGranted(res.sms);
+                    setNotifGranted(res.notifications);
+                  } catch {
+                    setSmsGranted(true);
+                  }
+                }}
                 className="py-1.5 px-3 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold cursor-pointer"
               >
-                {smsGranted ? (isGu ? 'પરમિશન અપાઈ ગઈ' : 'Enabled') : (isGu ? 'પરમિશન આપો' : 'Grant Permission')}
+                {smsGranted ? (isGu ? 'પરમિશન અપાઈ ગઈ ✓' : 'Enabled ✓') : (isGu ? '૧-ટેપ પરમિશન આપો' : 'Grant 1-Tap Permission')}
               </button>
             </div>
 
-            {/* Notification & Daily Reminder Card */}
-            <div className="p-3.5 rounded-2xl bg-emerald-50/60 border border-emerald-200 space-y-2">
+            {/* Notification & Daily Offline Reminder Card with Detailed Explanation */}
+            <div className="p-3.5 rounded-2xl bg-emerald-50/60 border border-emerald-200 space-y-2.5">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <Bell className="w-4 h-4 text-emerald-600" />
                   <span className="text-xs font-bold text-emerald-950">
-                    {isGu ? 'દૈનિક ખર્ચ રિમાઇન્ડર' : 'Daily Expense Reminder'}
+                    {isGu ? 'ઓફલાઇન અને રોકડ ખર્ચ રિમાઇન્ડર' : 'Offline Cash Expense Reminder'}
                   </span>
                 </div>
                 <input
@@ -485,17 +533,25 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
                 />
               </div>
 
+              {/* Task 4: Detailed Guidance on Reminder Time */}
+              <div className="bg-white/80 border border-emerald-200 rounded-xl p-2.5 text-[11px] text-emerald-950 leading-relaxed">
+                <strong>{isGu ? 'શા માટે આ સમય જરૂરી છે?' : 'Why is this reminder essential?'}</strong>{' '}
+                {isGu
+                  ? 'દિવસ દરમિયાન તમે શાકભાજી, રિક્ષા ભાડું, ચા-નાસ્તો કે અન્ય રોકડ ખર્ચા કર્યા હોય જેનો બેંક SMS નથી આવતો, તે રાત્રે ભૂલાઈ ન જાય તે માટે એપ તમારા પસંદ કરેલા સમયે યાદ અપાવશે અને ૧૦ સેકન્ડમાં નોંધી લેશે.'
+                  : 'Cash expenses like groceries, tea, or transit do not have bank SMS alerts. This reminder gently prompts you at your preferred time so no expense is forgotten.'}
+              </div>
+
               {enableDailyReminder && (
                 <div className="flex items-center gap-2 pt-1">
                   <Clock className="w-3.5 h-3.5 text-stone-500" />
-                  <label className="text-xs text-stone-700">
-                    {isGu ? 'રિમાઇન્ડર સમય:' : 'Reminder Time:'}
+                  <label className="text-xs font-bold text-stone-700">
+                    {isGu ? 'યાદ અપાવવાનો સમય:' : 'Reminder Time:'}
                   </label>
                   <input
                     type="time"
                     value={dailyReminderTime}
                     onChange={(e) => setDailyReminderTime(e.target.value)}
-                    className="px-2 py-1 text-xs rounded-lg border border-stone-200 bg-white outline-none"
+                    className="px-2.5 py-1 text-xs font-mono font-bold rounded-lg border border-stone-200 bg-white outline-none cursor-pointer"
                   />
                   {!notifGranted && (
                     <button

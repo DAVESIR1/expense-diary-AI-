@@ -10,10 +10,16 @@ import {
   Check, 
   CheckSquare, 
   Square,
-  ShieldCheck
+  ShieldCheck,
+  DownloadCloud,
+  Download,
+  Filter,
+  CheckCircle2,
+  X
 } from 'lucide-react';
 import { Transaction, Category, ReportPeriod, LayoutStyle, PageTheme } from '../types';
 import { TranslationStrings } from '../data/languages';
+import { NativeBridgeService } from '../services/nativeBridge';
 
 interface ReportScreenProps {
   transactions: Transaction[];
@@ -25,6 +31,7 @@ interface ReportScreenProps {
 
 export const ReportScreen: React.FC<ReportScreenProps> = ({
   transactions,
+  categories = [],
   t,
   currency,
   currentLang = 'en',
@@ -51,9 +58,11 @@ export const ReportScreen: React.FC<ReportScreenProps> = ({
   // 2. Type filter: 'all' | 'income' | 'expense' | 'both'
   const [typeFilter, setTypeFilter] = useState<'all' | 'income' | 'expense' | 'both'>('all');
 
-  // 3. Dynamic category selections
-  const [selectedIncomeCategories, setSelectedIncomeCategories] = useState<string[]>([]);
-  const [selectedExpenseCategories, setSelectedExpenseCategories] = useState<string[]>([]);
+  // 3. Dynamic Category Selection across all categories (Task 11)
+  const [categoryFilterMode, setCategoryFilterMode] = useState<'all' | 'single' | 'multi'>('all');
+  const [selectedSingleCategory, setSelectedSingleCategory] = useState<string>('');
+  const [selectedMultiCategories, setSelectedMultiCategories] = useState<string[]>([]);
+  const [categorySearchQuery, setCategorySearchQuery] = useState<string>('');
 
   // 4. Evidence inclusion toggle
   const [includeEvidence, setIncludeEvidence] = useState<boolean>(true);
@@ -62,58 +71,36 @@ export const ReportScreen: React.FC<ReportScreenProps> = ({
   const [layoutStyle, setLayoutStyle] = useState<LayoutStyle>('box');
   const [pageTheme, setPageTheme] = useState<PageTheme>('paper');
 
+  // 6. Export Modal state (Task 9: Save to Device vs Share File)
+  const [exportModalType, setExportModalType] = useState<'pdf' | 'excel' | null>(null);
+  const [exportNotice, setExportNotice] = useState<string | null>(null);
+
+  const showExportNotice = (msg: string) => {
+    setExportNotice(msg);
+    setTimeout(() => setExportNotice(null), 4000);
+  };
+
   const reportPreviewRef = useRef<HTMLDivElement>(null);
 
-  // Derive actual unique categories present in user's data
-  const actualIncomeCategories = useMemo(() => {
-    const set = new Set<string>();
-    transactions.forEach((tx) => {
-      if (tx.type === 'income' && tx.category) set.add(tx.category);
+  // Derive comprehensive list of categories from props and actual data
+  const allAvailableCategories = useMemo(() => {
+    const map = new Map<string, { id: string; name: string; nameGu?: string; type: string }>();
+    categories.forEach((c) => {
+      map.set(c.name, { id: c.id, name: c.name, nameGu: c.nameGu, type: c.type });
     });
-    return Array.from(set).sort();
-  }, [transactions]);
-
-  const actualExpenseCategories = useMemo(() => {
-    const set = new Set<string>();
     transactions.forEach((tx) => {
-      if (tx.type === 'expense' && tx.category) set.add(tx.category);
+      if (tx.category && !map.has(tx.category)) {
+        map.set(tx.category, { id: tx.category, name: tx.category, nameGu: tx.category, type: tx.type });
+      }
     });
-    return Array.from(set).sort();
-  }, [transactions]);
+    return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name));
+  }, [categories, transactions]);
 
-  // Sync category selections when switching filters or initial load
-  const isAllIncomeSelected = selectedIncomeCategories.length === actualIncomeCategories.length;
-  const isAllExpenseSelected = selectedExpenseCategories.length === actualExpenseCategories.length;
-
-  const toggleAllIncome = () => {
-    if (isAllIncomeSelected) {
-      setSelectedIncomeCategories([]);
+  const toggleMultiCategory = (catName: string) => {
+    if (selectedMultiCategories.includes(catName)) {
+      setSelectedMultiCategories(selectedMultiCategories.filter((c) => c !== catName));
     } else {
-      setSelectedIncomeCategories([...actualIncomeCategories]);
-    }
-  };
-
-  const toggleAllExpense = () => {
-    if (isAllExpenseSelected) {
-      setSelectedExpenseCategories([]);
-    } else {
-      setSelectedExpenseCategories([...actualExpenseCategories]);
-    }
-  };
-
-  const toggleIncomeCategory = (cat: string) => {
-    if (selectedIncomeCategories.includes(cat)) {
-      setSelectedIncomeCategories(selectedIncomeCategories.filter((c) => c !== cat));
-    } else {
-      setSelectedIncomeCategories([...selectedIncomeCategories, cat]);
-    }
-  };
-
-  const toggleExpenseCategory = (cat: string) => {
-    if (selectedExpenseCategories.includes(cat)) {
-      setSelectedExpenseCategories(selectedExpenseCategories.filter((c) => c !== cat));
-    } else {
-      setSelectedExpenseCategories([...selectedExpenseCategories, cat]);
+      setSelectedMultiCategories([...selectedMultiCategories, catName]);
     }
   };
 
@@ -142,27 +129,15 @@ export const ReportScreen: React.FC<ReportScreenProps> = ({
         if (itemDate < customStartDate || itemDate > customEndDate) return false;
       }
 
-      // 2. Type & Dynamic Category filtering
-      if (typeFilter === 'income') {
-        if (item.type !== 'income') return false;
-        if (selectedIncomeCategories.length > 0 && !selectedIncomeCategories.includes(item.category)) {
-          return false;
-        }
-      } else if (typeFilter === 'expense') {
-        if (item.type !== 'expense') return false;
-        if (selectedExpenseCategories.length > 0 && !selectedExpenseCategories.includes(item.category)) {
-          return false;
-        }
-      } else if (typeFilter === 'both') {
-        if (item.type === 'income') {
-          if (selectedIncomeCategories.length > 0 && !selectedIncomeCategories.includes(item.category)) {
-            return false;
-          }
-        } else if (item.type === 'expense') {
-          if (selectedExpenseCategories.length > 0 && !selectedExpenseCategories.includes(item.category)) {
-            return false;
-          }
-        }
+      // 2. Type filter
+      if (typeFilter === 'income' && item.type !== 'income') return false;
+      if (typeFilter === 'expense' && item.type !== 'expense') return false;
+
+      // 3. Category filter (Task 11)
+      if (categoryFilterMode === 'single' && selectedSingleCategory) {
+        if (item.category !== selectedSingleCategory) return false;
+      } else if (categoryFilterMode === 'multi' && selectedMultiCategories.length > 0) {
+        if (!selectedMultiCategories.includes(item.category)) return false;
       }
 
       return true;
@@ -177,8 +152,9 @@ export const ReportScreen: React.FC<ReportScreenProps> = ({
     customStartDate,
     customEndDate,
     typeFilter,
-    selectedIncomeCategories,
-    selectedExpenseCategories,
+    categoryFilterMode,
+    selectedSingleCategory,
+    selectedMultiCategories,
   ]);
 
   // Aggregate totals
@@ -196,13 +172,8 @@ export const ReportScreen: React.FC<ReportScreenProps> = ({
 
   const netSavings = totalIncome - totalExpense;
 
-  // EXPORT 1: Clean Vector PDF via Native Print API
-  const handlePrintPdf = () => {
-    window.print();
-  };
-
-  // EXPORT 2: Excel / CSV with UTF-8 BOM
-  const handleExportExcel = () => {
+  // CSV Generator
+  const generateCsvString = () => {
     const headers = [
       isGu ? 'તારીખ' : 'Date',
       isGu ? 'સમય' : 'Time',
@@ -241,56 +212,161 @@ export const ReportScreen: React.FC<ReportScreenProps> = ({
       ];
     });
 
-    // Add summary row at the bottom
     rows.push([]);
-    rows.push([
-      isGu ? 'કુલ આવક' : 'Total Income',
-      '',
-      '',
-      '',
-      '',
-      totalIncome,
-      '',
-      '',
-      '',
-    ]);
-    rows.push([
-      isGu ? 'કુલ ખર્ચ' : 'Total Expense',
-      '',
-      '',
-      '',
-      '',
-      totalExpense,
-      '',
-      '',
-      '',
-    ]);
-    rows.push([
-      isGu ? 'ચોખ્ખી બચત' : 'Net Savings',
-      '',
-      '',
-      '',
-      '',
-      netSavings,
-      '',
-      '',
-      '',
-    ]);
+    rows.push([isGu ? 'કુલ આવક' : 'Total Income', '', '', '', '', totalIncome, '', '', '']);
+    rows.push([isGu ? 'કુલ ખર્ચ' : 'Total Expense', '', '', '', '', totalExpense, '', '', '']);
+    rows.push([isGu ? 'ચોખ્ખી બચત' : 'Net Savings', '', '', '', '', netSavings, '', '', '']);
 
-    const csvContent =
-      '\uFEFF' +
-      [headers.join(','), ...rows.map((e) => e.join(','))].join('\n');
+    return '\uFEFF' + [headers.join(','), ...rows.map((e) => e.join(','))].join('\n');
+  };
 
+  const downloadCsvBlob = (csvContent: string, filename: string) => {
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.setAttribute('href', url);
-    const dateStr = new Date().toISOString().split('T')[0];
-    link.setAttribute('download', `Expense_Report_${period}_${dateStr}.csv`);
+    link.setAttribute('download', filename);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
+  };
+
+  const generateHtmlReport = () => {
+    const title = `${t.appName} - ${isGu ? 'નાણાકીય હિસાબ રિપોર્ટ' : 'Financial Statement'}`;
+    const dateStr = new Date().toLocaleDateString();
+    return `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>${title}</title>
+  <style>
+    body { font-family: system-ui, -apple-system, sans-serif; margin: 24px; color: #1c1917; }
+    h1 { margin: 0 0 4px; font-size: 22px; color: #047857; }
+    .subtitle { color: #78716c; font-size: 13px; margin-bottom: 20px; }
+    .metrics { display: flex; gap: 16px; margin-bottom: 24px; }
+    .card { flex: 1; padding: 14px; border-radius: 12px; border: 1px solid #e7e5e4; }
+    .card.income { background: #f0fdf4; border-color: #bbf7d0; color: #15803d; }
+    .card.expense { background: #fff1f2; border-color: #fecdd3; color: #be123c; }
+    .card.savings { background: #f5f5f4; color: #1c1917; }
+    .val { font-size: 20px; font-weight: bold; margin-top: 4px; }
+    table { width: 100%; border-collapse: collapse; margin-top: 16px; font-size: 12px; }
+    th { background: #f5f5f4; text-align: left; padding: 8px 10px; border-bottom: 2px solid #e7e5e4; }
+    td { padding: 8px 10px; border-bottom: 1px solid #f5f5f4; }
+    tr:nth-child(even) { background: #fafaf9; }
+  </style>
+</head>
+<body>
+  <h1>${title}</h1>
+  <div class="subtitle">${isGu ? 'સમયગાળો' : 'Period'}: ${period.toUpperCase()} | ${dateStr} | ${filteredData.length} ${isGu ? 'વ્યવહારો' : 'Transactions'}</div>
+  <div class="metrics">
+    <div class="card income">
+      <div>${t.totalIncome}</div>
+      <div class="val">${currency}${totalIncome.toLocaleString()}</div>
+    </div>
+    <div class="card expense">
+      <div>${t.totalExpense}</div>
+      <div class="val">${currency}${totalExpense.toLocaleString()}</div>
+    </div>
+    <div class="card savings">
+      <div>${t.netSavings}</div>
+      <div class="val">${currency}${netSavings.toLocaleString()}</div>
+    </div>
+  </div>
+  <table>
+    <thead>
+      <tr>
+        <th>${isGu ? 'તારીખ' : 'Date'}</th>
+        <th>${isGu ? 'પ્રકાર' : 'Type'}</th>
+        <th>${isGu ? 'વિગત' : 'Title'}</th>
+        <th>${isGu ? 'કેટેગરી' : 'Category'}</th>
+        <th>${isGu ? 'રકમ' : 'Amount'}</th>
+        <th>${isGu ? 'ચૂકવણી' : 'Mode'}</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${filteredData
+        .map(
+          (tx) => `
+      <tr>
+        <td>${tx.date}</td>
+        <td style="font-weight:bold;color:${tx.type === 'income' ? '#15803d' : '#be123c'}">${tx.type === 'income' ? t.income : t.expense}</td>
+        <td>${tx.title || '-'}</td>
+        <td>${tx.category || '-'}</td>
+        <td style="font-weight:bold;">${currency}${tx.amount.toLocaleString()}</td>
+        <td>${tx.paymentMode || '-'}</td>
+      </tr>`
+        )
+        .join('')}
+    </tbody>
+  </table>
+</body>
+</html>`;
+  };
+
+  // Task 9: Save to Device
+  const executeSaveToDevice = async () => {
+    const currentModal = exportModalType;
+    setExportModalType(null);
+    const dateStr = new Date().toISOString().split('T')[0];
+
+    if (currentModal === 'excel') {
+      const csvContent = generateCsvString();
+      const filename = `Expense_Report_${period}_${dateStr}.csv`;
+      try {
+        const res = await NativeBridgeService.saveFileToDownloads(filename, csvContent, 'text/csv');
+        if (res && res.success) {
+          showExportNotice(
+            isGu
+              ? `Excel રિપોર્ટ Downloads ફોલ્ડરમાં સેવ થયો: ${filename}`
+              : `Excel report saved to Downloads folder: ${filename}`
+          );
+          return;
+        }
+      } catch {}
+      downloadCsvBlob(csvContent, filename);
+      showExportNotice(
+        isGu
+          ? `Excel રિપોર્ટ ડાઉનલોડ શરૂ થયો: ${filename}`
+          : `Excel report download started: ${filename}`
+      );
+    } else if (currentModal === 'pdf') {
+      const htmlContent = generateHtmlReport();
+      const filename = `Expense_Report_${period}_${dateStr}.html`;
+      try {
+        await NativeBridgeService.saveFileToDownloads(filename, htmlContent, 'text/html');
+      } catch {}
+      window.print();
+      showExportNotice(
+        isGu
+          ? 'પ્રિન્ટ / PDF ડાયલોગ ખુલી ગયો છે. "Save as PDF" પસંદ કરો.'
+          : 'Print dialog opened. Select "Save as PDF" to save.'
+      );
+    }
+  };
+
+  // Task 9: Share via Apps
+  const executeShare = async () => {
+    const currentModal = exportModalType;
+    setExportModalType(null);
+    const dateStr = new Date().toISOString().split('T')[0];
+
+    if (currentModal === 'excel') {
+      const csvContent = generateCsvString();
+      const filename = `Expense_Report_${period}_${dateStr}.csv`;
+      try {
+        const shared = await NativeBridgeService.shareFile(
+          filename,
+          csvContent,
+          'text/csv',
+          isGu ? 'નાણાકીય રિપોર્ટ (Excel)' : 'Financial Report (Excel)'
+        );
+        if (shared.success) return;
+      } catch {}
+      handleShareReport();
+    } else if (currentModal === 'pdf') {
+      handleShareReport();
+    }
   };
 
   // Android Native Share Sheet
@@ -307,56 +383,38 @@ export const ReportScreen: React.FC<ReportScreenProps> = ({
         // user cancelled or failed cleanly
       }
     } else {
-      handleExportExcel();
+      const csvContent = generateCsvString();
+      const dateStr = new Date().toISOString().split('T')[0];
+      downloadCsvBlob(csvContent, `Expense_Report_${period}_${dateStr}.csv`);
     }
   };
 
+
   return (
     <div id="report-screen-container" className="space-y-6 pb-28">
-      {/* 1. Top Control Bar: PDF & Excel Buttons */}
-      <div className="p-5 sm:p-6 rounded-3xl bg-white border border-stone-200 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h2 className="text-xl font-bold text-stone-900 tracking-tight flex items-center gap-2">
-            <FileText className="w-5 h-5 text-emerald-600 stroke-[2.2]" />
-            <span>{t.report}</span>
-          </h2>
-          <p className="text-xs text-stone-500 mt-1">
-            {isGu
-              ? 'વ્યવસાયિક PDF અને Excel રિપોર્ટ જનરેશન અને એક્સપોર્ટ'
-              : 'Professional PDF & Excel reports with dynamic filtering'}
-          </p>
+      {/* Export Notification Toast */}
+      {exportNotice && (
+        <div className="p-3.5 bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-semibold rounded-2xl flex items-center gap-2 animate-in fade-in shadow-xs">
+          <Check className="w-4 h-4 text-emerald-600 shrink-0" />
+          <span>{exportNotice}</span>
         </div>
+      )}
 
-        {/* Action Buttons: Strictly PDF and Excel */}
-        <div className="flex items-center gap-2 flex-wrap">
-          <button
-            onClick={handlePrintPdf}
-            className="flex-1 sm:flex-none py-2.5 px-4 rounded-xl bg-stone-900 hover:bg-stone-800 text-white font-semibold text-xs transition cursor-pointer flex items-center justify-center gap-2 shadow-xs active:scale-98"
-          >
-            <Printer className="w-4 h-4 text-stone-300" />
-            <span>{t.exportPdf}</span>
-          </button>
-
-          <button
-            onClick={handleExportExcel}
-            className="flex-1 sm:flex-none py-2.5 px-4 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white font-semibold text-xs transition cursor-pointer flex items-center justify-center gap-2 shadow-xs active:scale-98"
-          >
-            <FileSpreadsheet className="w-4 h-4 text-emerald-200" />
-            <span>{t.exportExcel}</span>
-          </button>
-
-          <button
-            onClick={handleShareReport}
-            className="p-2.5 rounded-xl border border-stone-200 bg-stone-50 hover:bg-stone-100 text-stone-700 transition cursor-pointer"
-            title={isGu ? 'શેર કરો' : 'Share'}
-          >
-            <Share2 className="w-4 h-4" />
-          </button>
-        </div>
+      {/* Header */}
+      <div className="p-5 sm:p-6 rounded-3xl bg-white border border-stone-200 shadow-xs">
+        <h2 className="text-xl font-bold text-stone-900 tracking-tight flex items-center gap-2">
+          <FileText className="w-5 h-5 text-emerald-600 stroke-[2.2]" />
+          <span>{t.report}</span>
+        </h2>
+        <p className="text-xs text-stone-500 mt-1">
+          {isGu
+            ? 'વ્યવસાયિક PDF અને Excel રિપોર્ટ જનરેશન અને એક્સપોર્ટ'
+            : 'Professional PDF & Excel reports with dynamic filtering'}
+        </p>
       </div>
 
-      {/* 2. Filter & Layout Configuration Card */}
-      <div className="p-5 sm:p-6 rounded-3xl bg-white border border-stone-200 shadow-xs space-y-5">
+      {/* 1. FILTERS & CATEGORY CONFIGURATION CARD (Task 10: AT TOP) */}
+      <div id="report-filters-card" className="p-5 sm:p-6 rounded-3xl bg-white border border-stone-200 shadow-xs space-y-5">
         {/* Period Selector Tabs */}
         <div>
           <label className="text-xs font-bold text-stone-700 flex items-center gap-1.5 mb-2.5">
@@ -411,7 +469,7 @@ export const ReportScreen: React.FC<ReportScreenProps> = ({
                 <select
                   value={selectedQuarter}
                   onChange={(e) => setSelectedQuarter(e.target.value)}
-                  className="px-3 py-2 text-xs rounded-xl border border-stone-200 bg-stone-50 outline-none"
+                  className="px-3 py-2 text-xs rounded-xl border border-stone-200 bg-stone-50 outline-none font-medium"
                 >
                   <option value="Q1">Q1 (Jan - Mar)</option>
                   <option value="Q2">Q2 (Apr - Jun)</option>
@@ -456,7 +514,7 @@ export const ReportScreen: React.FC<ReportScreenProps> = ({
           </div>
         </div>
 
-        {/* 3. Transaction Type Filter Mode: All / Income Only / Expense Only / Both */}
+        {/* 2. Transaction Type Filter: All / Income Only / Expense Only */}
         <div className="border-t border-stone-100 pt-4">
           <label className="text-xs font-bold text-stone-700 block mb-2">
             {isGu ? 'વ્યવહાર પ્રકાર (Type Filter):' : 'Transaction Filter Mode:'}
@@ -466,7 +524,6 @@ export const ReportScreen: React.FC<ReportScreenProps> = ({
               { id: 'all', labelGu: 'સંપૂર્ણ રિપોર્ટ (બધા)', labelEn: 'All (Complete Report)' },
               { id: 'income', labelGu: 'માત્ર આવક (Income Only)', labelEn: 'Income Only' },
               { id: 'expense', labelGu: 'માત્ર ખર્ચ (Expense Only)', labelEn: 'Expense Only' },
-              { id: 'both', labelGu: 'આવક અને ખર્ચ (બંને)', labelEn: 'Both Categories' },
             ].map((m) => (
               <button
                 key={m.id}
@@ -483,82 +540,149 @@ export const ReportScreen: React.FC<ReportScreenProps> = ({
           </div>
         </div>
 
-        {/* 4. Dynamic Category Checkboxes (Based on selected Type) */}
-        {(typeFilter === 'income' || typeFilter === 'both') && actualIncomeCategories.length > 0 && (
-          <div className="bg-emerald-50/50 border border-emerald-200 rounded-2xl p-4 space-y-2.5">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-bold text-emerald-900">
-                {isGu ? 'આવકના સ્ત્રોતો / કેટેગરીઝ:' : 'Income Sources / Categories:'}
-              </span>
+        {/* 3. Category Filter Mode (Task 11: Single vs Multi Across All 56 Categories) */}
+        <div className="border-t border-stone-100 pt-4 space-y-3">
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <label className="text-xs font-bold text-stone-700 flex items-center gap-1.5">
+              <Filter className="w-4 h-4 text-emerald-600" />
+              <span>{isGu ? 'કેટેગરી ફિલ્ટર (Category Filter):' : 'Category Filter:'}</span>
+            </label>
+
+            <div className="flex gap-1 text-xs">
               <button
-                onClick={toggleAllIncome}
-                className="text-[11px] font-semibold text-emerald-700 hover:text-emerald-800 flex items-center gap-1 cursor-pointer"
+                onClick={() => {
+                  setCategoryFilterMode('all');
+                  setSelectedSingleCategory('');
+                  setSelectedMultiCategories([]);
+                }}
+                className={`px-3 py-1 rounded-xl text-xs font-semibold transition cursor-pointer border ${
+                  categoryFilterMode === 'all'
+                    ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs'
+                    : 'bg-stone-50 text-stone-600 border-stone-200 hover:bg-stone-100'
+                }`}
               >
-                {isAllIncomeSelected ? <CheckSquare className="w-3.5 h-3.5" /> : <Square className="w-3.5 h-3.5" />}
-                <span>{isAllIncomeSelected ? (isGu ? 'બધા પસંદ કરેલ' : 'Deselect All') : (isGu ? 'બધા પસંદ કરો' : 'Select All')}</span>
+                {isGu ? 'બધી કેટેગરીઝ (All)' : 'All Categories'}
+              </button>
+              <button
+                onClick={() => setCategoryFilterMode('single')}
+                className={`px-3 py-1 rounded-xl text-xs font-semibold transition cursor-pointer border ${
+                  categoryFilterMode === 'single'
+                    ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs'
+                    : 'bg-stone-50 text-stone-600 border-stone-200 hover:bg-stone-100'
+                }`}
+              >
+                {isGu ? 'સિંગલ (Single)' : 'Single'}
+              </button>
+              <button
+                onClick={() => setCategoryFilterMode('multi')}
+                className={`px-3 py-1 rounded-xl text-xs font-semibold transition cursor-pointer border ${
+                  categoryFilterMode === 'multi'
+                    ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs'
+                    : 'bg-stone-50 text-stone-600 border-stone-200 hover:bg-stone-100'
+                }`}
+              >
+                {isGu ? 'મલ્ટી (Multi)' : 'Multi'}
               </button>
             </div>
-
-            <div className="flex flex-wrap gap-1.5">
-              {actualIncomeCategories.map((cat) => {
-                const isSelected = selectedIncomeCategories.length === 0 || selectedIncomeCategories.includes(cat);
-                return (
-                  <button
-                    key={cat}
-                    onClick={() => toggleIncomeCategory(cat)}
-                    className={`px-2.5 py-1 rounded-lg text-xs transition cursor-pointer flex items-center gap-1.5 border ${
-                      isSelected
-                        ? 'bg-emerald-600 text-white border-emerald-600 font-semibold'
-                        : 'bg-white text-emerald-900 border-emerald-200'
-                    }`}
-                  >
-                    {isSelected && <Check className="w-3 h-3" />}
-                    <span>{cat}</span>
-                  </button>
-                );
-              })}
-            </div>
           </div>
-        )}
 
-        {(typeFilter === 'expense' || typeFilter === 'both') && actualExpenseCategories.length > 0 && (
-          <div className="bg-rose-50/40 border border-rose-200 rounded-2xl p-4 space-y-2.5">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-bold text-rose-900">
-                {isGu ? 'ખર્ચની કેટેગરીઝ:' : 'Expense Categories:'}
-              </span>
-              <button
-                onClick={toggleAllExpense}
-                className="text-[11px] font-semibold text-rose-700 hover:text-rose-800 flex items-center gap-1 cursor-pointer"
+          {/* SINGLE CATEGORY SELECTOR */}
+          {categoryFilterMode === 'single' && (
+            <div className="p-3.5 rounded-2xl bg-stone-50 border border-stone-200 space-y-2">
+              <div className="text-xs text-stone-600 font-medium">
+                {isGu ? 'કોઈપણ એક ચોક્કસ કેટેગરી પસંદ કરો:' : 'Select any single category to filter:'}
+              </div>
+              <select
+                value={selectedSingleCategory}
+                onChange={(e) => setSelectedSingleCategory(e.target.value)}
+                className="w-full px-3.5 py-2 text-xs rounded-xl border border-stone-200 bg-white outline-none focus:border-emerald-500 font-semibold cursor-pointer"
               >
-                {isAllExpenseSelected ? <CheckSquare className="w-3.5 h-3.5" /> : <Square className="w-3.5 h-3.5" />}
-                <span>{isAllExpenseSelected ? (isGu ? 'બધા પસંદ કરેલ' : 'Deselect All') : (isGu ? 'બધા પસંદ કરો' : 'Select All')}</span>
-              </button>
+                <option value="">{isGu ? '-- કેટેગરી પસંદ કરો --' : '-- Choose a Category --'}</option>
+                {allAvailableCategories
+                  .filter((c) => (typeFilter === 'income' ? c.type === 'income' : typeFilter === 'expense' ? c.type === 'expense' : true))
+                  .map((c) => (
+                    <option key={c.id || c.name} value={c.name}>
+                      {isGu ? (c.nameGu || c.name) : c.name} ({c.type === 'income' ? t.income : t.expense})
+                    </option>
+                  ))}
+              </select>
             </div>
+          )}
 
-            <div className="flex flex-wrap gap-1.5">
-              {actualExpenseCategories.map((cat) => {
-                const isSelected = selectedExpenseCategories.length === 0 || selectedExpenseCategories.includes(cat);
-                return (
+          {/* MULTI CATEGORY SELECTOR */}
+          {categoryFilterMode === 'multi' && (
+            <div className="p-3.5 rounded-2xl bg-stone-50 border border-stone-200 space-y-2.5">
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <span className="text-xs font-bold text-stone-800">
+                  {isGu ? 'એકથી વધુ કેટેગરીઝ પસંદ કરો' : 'Select Multiple Categories'}
+                  {selectedMultiCategories.length > 0 && ` (${selectedMultiCategories.length})`}
+                </span>
+                <div className="flex gap-2 text-[11px]">
                   <button
-                    key={cat}
-                    onClick={() => toggleExpenseCategory(cat)}
-                    className={`px-2.5 py-1 rounded-lg text-xs transition cursor-pointer flex items-center gap-1.5 border ${
-                      isSelected
-                        ? 'bg-rose-600 text-white border-rose-600 font-semibold'
-                        : 'bg-white text-rose-900 border-rose-200'
-                    }`}
+                    onClick={() => {
+                      const allNames = allAvailableCategories
+                        .filter((c) => (typeFilter === 'income' ? c.type === 'income' : typeFilter === 'expense' ? c.type === 'expense' : true))
+                        .map((c) => c.name);
+                      setSelectedMultiCategories(allNames);
+                    }}
+                    className="text-emerald-700 font-bold hover:underline cursor-pointer"
                   >
-                    {isSelected && <Check className="w-3 h-3" />}
-                    <span>{cat}</span>
+                    {isGu ? 'બધા પસંદ' : 'Select All'}
                   </button>
-                );
-              })}
-            </div>
-          </div>
-        )}
+                  <span className="text-stone-300">|</span>
+                  <button
+                    onClick={() => setSelectedMultiCategories([])}
+                    className="text-rose-600 font-bold hover:underline cursor-pointer"
+                  >
+                    {isGu ? 'સાફ કરો' : 'Clear All'}
+                  </button>
+                </div>
+              </div>
 
-        {/* 5. Layout Style Selector (Box vs Minimal Card ONLY) & Evidence Toggle */}
+              {/* Search bar inside multi categories */}
+              <div className="relative">
+                <Search className="w-3.5 h-3.5 text-stone-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  value={categorySearchQuery}
+                  onChange={(e) => setCategorySearchQuery(e.target.value)}
+                  placeholder={isGu ? 'કેટેગરી શોધો...' : 'Search categories...'}
+                  className="w-full pl-8 pr-3 py-1.5 text-xs rounded-xl border border-stone-200 bg-white outline-none focus:border-emerald-500"
+                />
+              </div>
+
+              {/* Category Chips Grid */}
+              <div className="flex flex-wrap gap-1.5 max-h-40 overflow-y-auto pr-1">
+                {allAvailableCategories
+                  .filter((c) => (typeFilter === 'income' ? c.type === 'income' : typeFilter === 'expense' ? c.type === 'expense' : true))
+                  .filter((c) => {
+                    if (!categorySearchQuery) return true;
+                    const q = categorySearchQuery.toLowerCase();
+                    return c.name.toLowerCase().includes(q) || (c.nameGu && c.nameGu.includes(q));
+                  })
+                  .map((cat) => {
+                    const isSelected = selectedMultiCategories.includes(cat.name);
+                    return (
+                      <button
+                        key={cat.id || cat.name}
+                        onClick={() => toggleMultiCategory(cat.name)}
+                        className={`px-2.5 py-1 rounded-lg text-xs transition cursor-pointer flex items-center gap-1.5 border ${
+                          isSelected
+                            ? 'bg-emerald-600 text-white border-emerald-600 font-semibold shadow-xs'
+                            : 'bg-white text-stone-700 border-stone-200 hover:bg-stone-100'
+                        }`}
+                      >
+                        {isSelected ? <Check className="w-3 h-3" /> : <span className="w-3 h-3 rounded-xs border border-stone-300 inline-block" />}
+                        <span>{isGu ? (cat.nameGu || cat.name) : cat.name}</span>
+                      </button>
+                    );
+                  })}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* 4. Layout Style Selector & Evidence Toggle */}
         <div className="border-t border-stone-100 pt-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <label className="text-xs font-bold text-stone-700 flex items-center gap-1.5">
@@ -602,6 +726,57 @@ export const ReportScreen: React.FC<ReportScreenProps> = ({
               {isGu ? 'ઓરિજિનલ પુરાવો / રેફરન્સ નોંધી રાખો' : 'Include Original Evidence / Ref'}
             </span>
           </label>
+        </div>
+      </div>
+
+      {/* 2. EXPORT & SHARE ACTIONS CARD (Task 10: RIGHT BELOW FILTERS) */}
+      <div id="report-export-actions-card" className="p-5 sm:p-6 rounded-3xl bg-white border border-stone-200 shadow-xs space-y-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <DownloadCloud className="w-5 h-5 text-emerald-600 stroke-[2.2]" />
+            <h3 className="text-sm font-bold text-stone-900 tracking-tight">
+              {isGu ? 'રિપોર્ટ એક્સપોર્ટ અને શેર કરો' : 'Export & Share Report'}
+            </h3>
+          </div>
+          <span className="text-xs bg-emerald-100 text-emerald-800 px-2.5 py-0.5 rounded-full font-bold">
+            {filteredData.length} {isGu ? 'વ્યવહારો ફિલ્ટર થયેલ' : 'records filtered'}
+          </span>
+        </div>
+
+        <p className="text-xs text-stone-500 leading-relaxed">
+          {isGu
+            ? 'ઉપર પસંદ કરેલા સમયગાળા અને કેટેગરી ફિલ્ટર્સ મુજબ PDF અથવા Excel (CSV) રિપોર્ટ તમારા ફોનમાં ડાઉનલોડ કરો અથવા શેર કરો:'
+            : 'Download PDF or Excel reports directly to your Downloads folder or share with other apps:'}
+        </p>
+
+        {/* Action Buttons: Strictly PDF, Excel and Share */}
+        <div className="flex items-center gap-3 flex-wrap pt-1">
+          <button
+            id="export-pdf-btn"
+            onClick={() => setExportModalType('pdf')}
+            className="flex-1 min-w-[140px] py-3 px-4 rounded-xl bg-stone-900 hover:bg-stone-800 text-white font-bold text-xs transition cursor-pointer flex items-center justify-center gap-2 shadow-xs active:scale-98"
+          >
+            <Printer className="w-4 h-4 text-stone-300" />
+            <span>{t.exportPdf}</span>
+          </button>
+
+          <button
+            id="export-excel-btn"
+            onClick={() => setExportModalType('excel')}
+            className="flex-1 min-w-[140px] py-3 px-4 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs transition cursor-pointer flex items-center justify-center gap-2 shadow-xs active:scale-98"
+          >
+            <FileSpreadsheet className="w-4 h-4 text-emerald-200" />
+            <span>{t.exportExcel}</span>
+          </button>
+
+          <button
+            id="share-report-btn"
+            onClick={handleShareReport}
+            className="p-3 rounded-xl border border-stone-200 bg-stone-50 hover:bg-stone-100 text-stone-700 transition cursor-pointer flex items-center justify-center shadow-xs"
+            title={isGu ? 'શેર કરો' : 'Share'}
+          >
+            <Share2 className="w-4 h-4" />
+          </button>
         </div>
       </div>
 
@@ -766,6 +941,90 @@ export const ReportScreen: React.FC<ReportScreenProps> = ({
           </div>
         )}
       </div>
+
+      {/* EXPORT OPTIONS MODAL (Task 9: Save to Device vs Share File) */}
+      {exportModalType && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs animate-in fade-in">
+          <div className="w-full max-w-sm bg-white rounded-3xl p-6 shadow-2xl border border-stone-200 space-y-4">
+            <div className="flex items-center justify-between border-b border-stone-100 pb-3">
+              <div className="flex items-center gap-2">
+                <div className="p-2 rounded-xl bg-emerald-50 text-emerald-700">
+                  {exportModalType === 'pdf' ? <Printer className="w-5 h-5" /> : <FileSpreadsheet className="w-5 h-5" />}
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-stone-900">
+                    {exportModalType === 'pdf'
+                      ? (isGu ? 'PDF રિપોર્ટ એક્સપોર્ટ' : 'Export PDF Report')
+                      : (isGu ? 'Excel / CSV એક્સપોર્ટ' : 'Export Excel / CSV Report')}
+                  </h3>
+                  <p className="text-[11px] text-stone-500">
+                    {isGu ? 'એક્સપોર્ટ પદ્ધતિ પસંદ કરો' : 'Choose export method'}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setExportModalType(null)}
+                className="w-7 h-7 rounded-full bg-stone-100 hover:bg-stone-200 flex items-center justify-center text-stone-600 font-bold text-xs cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <p className="text-xs text-stone-600 leading-relaxed">
+              {isGu
+                ? 'તમારે આ રિપોર્ટ સીધો તમારા ફોનના Downloads ફોલ્ડરમાં સાચવવો છે કે અન્ય એપ્સ સાથે શેર કરવો છે?'
+                : 'Do you want to save this report directly to your Downloads folder or share it with other apps?'}
+            </p>
+
+            <div className="space-y-2.5 pt-1">
+              {/* Option 1: Save to Device */}
+              <button
+                id="modal-save-to-device-btn"
+                onClick={executeSaveToDevice}
+                className="w-full p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200 hover:bg-emerald-100 text-left transition cursor-pointer flex items-center gap-3 active:scale-98 shadow-xs"
+              >
+                <div className="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-xs">
+                  <DownloadCloud className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="text-xs font-bold text-emerald-950">
+                    {isGu ? '💾 તમારા ફોનમાં સેવ કરો' : '💾 Save to Device (Downloads)'}
+                  </div>
+                  <div className="text-[10px] text-emerald-800">
+                    {isGu ? 'ફાઈલ સીધી તમારા Downloads ફોલ્ડરમાં સેવ થશે.' : 'Saves file directly to device Downloads folder.'}
+                  </div>
+                </div>
+              </button>
+
+              {/* Option 2: Share File */}
+              <button
+                id="modal-share-file-btn"
+                onClick={executeShare}
+                className="w-full p-3.5 rounded-2xl bg-stone-50 border border-stone-200 hover:bg-stone-100 text-left transition cursor-pointer flex items-center gap-3 active:scale-98 shadow-xs"
+              >
+                <div className="w-10 h-10 rounded-xl bg-stone-900 text-white flex items-center justify-center shrink-0 shadow-xs">
+                  <Share2 className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="text-xs font-bold text-stone-900">
+                    {isGu ? '📤 અન્ય સાથે શેર કરો' : '📤 Share with Apps'}
+                  </div>
+                  <div className="text-[10px] text-stone-500">
+                    {isGu ? 'વોટ્સએપ, જીમેલ કે ડ્રાઈવ પર તરત શેર કરો.' : 'Share via WhatsApp, Gmail, Drive, etc.'}
+                  </div>
+                </div>
+              </button>
+            </div>
+
+            <button
+              onClick={() => setExportModalType(null)}
+              className="w-full py-2.5 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-700 font-semibold text-xs transition cursor-pointer"
+            >
+              {t.cancel}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

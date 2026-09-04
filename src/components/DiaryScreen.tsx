@@ -146,8 +146,7 @@ export const DiaryScreen: React.FC<DiaryScreenProps> = ({
   };
 
   // Unlock Diary
-  const handleUnlockDiary = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const executeUnlockWithPin = async (pinStr: string) => {
     setUnlockError(null);
 
     const pinToVerify = securityConfig.diaryPinHash || securityConfig.pinHash;
@@ -158,12 +157,21 @@ export const DiaryScreen: React.FC<DiaryScreenProps> = ({
       return;
     }
 
-    const match = await verifyPBKDF2(unlockPin, pinToVerify, saltToVerify);
+    const match = await verifyPBKDF2(pinStr, pinToVerify, saltToVerify);
     if (match) {
       setIsDiaryLocked(false);
       setUnlockPin('');
     } else {
       setUnlockError(isGu ? 'ખોટો પિન. ફરી પ્રયાસ કરો.' : 'Incorrect PIN. Try again.');
+    }
+  };
+
+  const handleUnlockDiary = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (unlockPin.length === 4) {
+      await executeUnlockWithPin(unlockPin);
+    } else {
+      setUnlockError(isGu ? 'કૃપા કરીને ૪ અંકનો પિન દાખલ કરો.' : 'Please enter 4-digit PIN.');
     }
   };
 
@@ -333,18 +341,73 @@ export const DiaryScreen: React.FC<DiaryScreenProps> = ({
           </div>
         )}
 
-        <form onSubmit={handleUnlockDiary} className="space-y-3">
+        <form onSubmit={handleUnlockDiary} className="space-y-4">
           <input
             type="password"
-            maxLength={6}
+            inputMode="numeric"
+            pattern="[0-9]*"
+            maxLength={4}
             value={unlockPin}
-            onChange={(e) => setUnlockPin(e.target.value.replace(/\D/g, ''))}
+            onChange={(e) => {
+              const val = e.target.value.replace(/\D/g, '').slice(0, 4);
+              setUnlockPin(val);
+              if (val.length === 4) {
+                executeUnlockWithPin(val);
+              }
+            }}
             placeholder="••••"
-            className="w-full px-4 py-2.5 text-center text-lg font-mono tracking-widest rounded-xl border border-stone-200 bg-stone-50 outline-none focus:border-indigo-500"
+            className="w-full px-4 py-3 text-center text-2xl font-mono tracking-[0.6em] rounded-2xl border border-stone-200 bg-stone-50 outline-none focus:border-indigo-500 focus:bg-white"
+            autoFocus
           />
+
+          {/* Pure Numeric Touch Keypad (Task 8) */}
+          <div className="grid grid-cols-3 gap-2.5 max-w-[240px] mx-auto pt-1">
+            {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((digit) => (
+              <button
+                key={digit}
+                type="button"
+                onClick={() => {
+                  if (unlockPin.length < 4) {
+                    const next = unlockPin + digit.toString();
+                    setUnlockPin(next);
+                    if (next.length === 4) {
+                      executeUnlockWithPin(next);
+                    }
+                  }
+                }}
+                className="w-14 h-14 mx-auto rounded-2xl bg-stone-50 border border-stone-200 text-stone-800 font-bold text-xl hover:bg-stone-100 active:scale-95 transition flex items-center justify-center cursor-pointer shadow-xs"
+              >
+                {digit}
+              </button>
+            ))}
+            <div />
+            <button
+              type="button"
+              onClick={() => {
+                if (unlockPin.length < 4) {
+                  const next = unlockPin + '0';
+                  setUnlockPin(next);
+                  if (next.length === 4) {
+                    executeUnlockWithPin(next);
+                  }
+                }
+              }}
+              className="w-14 h-14 mx-auto rounded-2xl bg-stone-50 border border-stone-200 text-stone-800 font-bold text-xl hover:bg-stone-100 active:scale-95 transition flex items-center justify-center cursor-pointer shadow-xs"
+            >
+              0
+            </button>
+            <button
+              type="button"
+              onClick={() => setUnlockPin((prev) => prev.slice(0, -1))}
+              className="w-14 h-14 mx-auto rounded-2xl bg-stone-50 border border-stone-200 text-stone-600 font-bold text-base hover:bg-stone-100 active:scale-95 transition flex items-center justify-center cursor-pointer shadow-xs"
+            >
+              ⌫
+            </button>
+          </div>
+
           <button
             type="submit"
-            className="w-full py-2.5 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs transition cursor-pointer flex items-center justify-center gap-1.5"
+            className="w-full py-3 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs transition cursor-pointer flex items-center justify-center gap-1.5 shadow-xs"
           >
             <Unlock className="w-4 h-4" />
             <span>{isGu ? 'અનલૉક કરો' : 'Unlock Diary'}</span>

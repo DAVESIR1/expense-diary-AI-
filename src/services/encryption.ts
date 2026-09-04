@@ -144,17 +144,31 @@ export async function decryptPayload<T>(
   }
 }
 
-// Download encrypted backup file with .edb extension
-export function downloadEncryptedBackup(envelope: EncryptedBackupEnvelope, filenamePrefix = 'expense-diary-backup'): void {
+// Download encrypted backup file with .edb extension (supports Android native Downloads saving)
+export async function downloadEncryptedBackup(envelope: EncryptedBackupEnvelope, filenamePrefix = 'expense-diary-backup'): Promise<string> {
   const json = JSON.stringify(envelope, null, 2);
+  const dateStr = new Date().toISOString().split('T')[0];
+  const filename = `${filenamePrefix}-${dateStr}.edb`;
+
+  try {
+    const { NativeBridgeService } = await import('./nativeBridge');
+    const res = await NativeBridgeService.saveFileToDownloads(filename, json, 'application/octet-stream');
+    if (res && res.success) {
+      return filename;
+    }
+  } catch {
+    // Fallback to browser download
+  }
+
   const blob = new Blob([json], { type: 'application/octet-stream' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
-  const dateStr = new Date().toISOString().split('T')[0];
   a.href = url;
-  a.download = `${filenamePrefix}-${dateStr}.edb`;
+  a.download = filename;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
+  return filename;
 }
+

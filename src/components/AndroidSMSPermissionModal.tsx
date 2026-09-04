@@ -92,10 +92,9 @@ export const AndroidSMSPermissionModal: React.FC<AndroidSMSPermissionModalProps>
         <div className="flex flex-col sm:flex-row gap-3">
           <button
             onClick={async () => {
-              // Actually request real Android OS permissions
+              // 1-Tap Unified Native Permission Request
               try {
-                await NativeBridgeService.requestSMSPermissions();
-                await NativeBridgeService.requestNotificationPermissions();
+                await NativeBridgeService.requestAllNativePermissions();
               } catch (e) {
                 // Fallback for web
               }

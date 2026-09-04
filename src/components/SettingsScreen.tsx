@@ -142,6 +142,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   const [restoreError, setRestoreError] = useState<string | null>(null);
   const [isMultiRestoreOpen, setIsMultiRestoreOpen] = useState(false);
   const [isRestoring, setIsRestoring] = useState(false);
+  const [isBackupInfoOpen, setIsBackupInfoOpen] = useState(false);
 
   // Cloud snapshots
   const [cloudBackups, setCloudBackups] = useState<CloudBackupMetadata[]>([]);
@@ -220,11 +221,11 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
       };
 
       const envelope = await encryptPayload(fullBackupData, passphrase);
-      downloadEncryptedBackup(envelope, 'expense-diary-encrypted');
+      const savedFilename = await downloadEncryptedBackup(envelope, 'expense-diary-encrypted');
       showNotice(
         isGu
-          ? 'સુરક્ષિત એન્ક્રિપ્ટેડ બેકઅપ (.edb) સફળતાપૂર્વક ડાઉનલોડ થયો!'
-          : 'Encrypted backup (.edb) downloaded successfully!'
+          ? `સુરક્ષિત બેકઅપ ફાઈલ (${savedFilename}) Downloads ફોલ્ડરમાં સેવ થઈ ગઈ!`
+          : `Encrypted backup (${savedFilename}) saved to Downloads folder!`
       );
     } catch (err: any) {
       alert(err.message || 'Error generating encrypted backup.');
@@ -457,60 +458,53 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           </button>
         </div>
 
-        {/* Diary Lock Toggle */}
-        <div className="flex items-center justify-between p-3.5 rounded-2xl bg-stone-50 border border-stone-200/80">
-          <div>
-            <div className="text-xs font-bold text-stone-800">
-              {isGu ? 'વ્યક્તિગત ડાયરી માટે અલગ લૉક' : 'Personal Diary Lock'}
-            </div>
-            <div className="text-[11px] text-stone-500">
-              {isGu
-                ? 'ડાયરી ટેબ ખોલવા માટે પણ પિન પૂછો'
-                : 'Require PIN verification to open Personal Diary'}
-            </div>
-          </div>
-          <input
-            type="checkbox"
-            checked={securityConfig.diaryLockEnabled}
-            onChange={(e) =>
-              onUpdateSecurityConfig({ diaryLockEnabled: e.target.checked })
-            }
-            className="w-4 h-4 accent-emerald-600 rounded cursor-pointer"
-          />
-        </div>
       </div>
 
-      {/* 2. Encrypted Local & Cloud Backup Section */}
+      {/* 2. Encrypted Local & Cloud Backup Section (Tasks 13 & 14) */}
       <div
         id="encrypted-backup-settings-card"
         className="p-5 sm:p-6 rounded-3xl bg-white border border-stone-200 shadow-xs space-y-4"
       >
-        <div className="flex items-center gap-2">
-          <Database className="w-4 h-4 text-emerald-600 stroke-[2]" />
-          <h3 className="text-sm font-bold text-stone-800 tracking-tight">
-            {t.encryptedBackup} & {t.cloudVault}
-          </h3>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Database className="w-4 h-4 text-emerald-600 stroke-[2]" />
+            <h3 className="text-sm font-bold text-stone-800 tracking-tight">
+              {t.encryptedBackup} & {t.cloudVault}
+            </h3>
+          </div>
+          <button
+            onClick={() => setIsBackupInfoOpen(true)}
+            className="px-2.5 py-1 rounded-xl border border-stone-200 bg-stone-50 hover:bg-stone-100 text-stone-700 text-[11px] font-bold flex items-center gap-1.5 cursor-pointer transition"
+            title={isGu ? 'બેકઅપ માર્ગદર્શિકા' : 'Backup Guide'}
+          >
+            <Info className="w-3.5 h-3.5 text-emerald-600" />
+            <span>{isGu ? 'માર્ગદર્શિકા (Guide)' : 'Guide'}</span>
+          </button>
         </div>
 
         <p className="text-xs text-stone-500 leading-relaxed">
           {isGu
-            ? 'AES-GCM ૨૫૬-બીટ પ્રમાણિત એન્ક્રિપ્શન. તમારો પિન કે ડેટા ક્યારેય અનએન્ક્રિપ્ટેડ સ્વરૂપે સાચવવામાં કે મોકલવામાં આવતો નથી.'
-            : 'AES-GCM 256-bit authenticated encryption. Your passphrase or PIN is never transmitted unencrypted.'}
+            ? 'AES-GCM ૨૫૬-બીટ મિલિટરી-ગ્રેડ એન્ક્રિપ્ટેડ બેકઅપ. તમારો ડેટા સીધો Downloads ફોલ્ડરમાં સેવ થશે.'
+            : 'AES-GCM 256-bit military-grade encrypted backup. Files save directly to your Downloads folder.'}
         </p>
 
-        {/* Action Buttons */}
+        {/* 3 Simple Action Buttons (Task 13) */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
           <button
+            id="export-backup-btn"
             onClick={handleExportEncryptedBackup}
-            className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200 hover:bg-emerald-100 text-xs font-bold text-emerald-900 flex items-center justify-center gap-2 cursor-pointer transition"
+            className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200 hover:bg-emerald-100 text-xs font-bold text-emerald-900 flex items-center justify-center gap-2 cursor-pointer transition shadow-xs active:scale-98"
           >
             <DownloadCloud className="w-4 h-4 text-emerald-700" />
-            <span>{isGu ? 'એન્ક્રિપ્ટેડ બેકઅપ ડાઉનલોડ (.edb)' : 'Export Encrypted Backup (.edb)'}</span>
+            <span>{isGu ? 'Export Backup Data (બેકઅપ એક્સપોર્ટ)' : 'Export Backup Data'}</span>
           </button>
 
-          <label className="p-3.5 rounded-2xl bg-stone-50 border border-stone-200 hover:bg-stone-100 text-xs font-bold text-stone-800 flex items-center justify-center gap-2 cursor-pointer transition">
+          <label
+            id="import-backup-btn"
+            className="p-3.5 rounded-2xl bg-stone-50 border border-stone-200 hover:bg-stone-100 text-xs font-bold text-stone-800 flex items-center justify-center gap-2 cursor-pointer transition shadow-xs active:scale-98"
+          >
             <Upload className="w-4 h-4 text-stone-600" />
-            <span>{isGu ? 'બેકઅપ ફાઈલ પસંદ કરી રીસ્ટોર કરો' : 'Restore Single File'}</span>
+            <span>{isGu ? 'Import Backup Data (બેકઅપ ઇમ્પોર્ટ)' : 'Import Backup Data'}</span>
             <input
               type="file"
               accept=".edb,.json"
@@ -520,11 +514,12 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           </label>
 
           <button
+            id="multi-import-backup-btn"
             onClick={() => setIsMultiRestoreOpen(true)}
-            className="p-3.5 rounded-2xl bg-indigo-50 border border-indigo-200 hover:bg-indigo-100 text-xs font-bold text-indigo-950 flex items-center justify-center gap-2 cursor-pointer transition col-span-1 sm:col-span-2"
+            className="p-3.5 rounded-2xl bg-indigo-50 border border-indigo-200 hover:bg-indigo-100 text-xs font-bold text-indigo-950 flex items-center justify-center gap-2 cursor-pointer transition col-span-1 sm:col-span-2 shadow-xs active:scale-98"
           >
             <Layers className="w-4 h-4 text-indigo-700" />
-            <span>{isGu ? 'મલ્ટી-ફાઈલ / ફોલ્ડર બેકઅપ તપાસો અને મર્જ કરો (Smart Merge)' : 'Multi-File / Folder Restore & Deduplicated Merge'}</span>
+            <span>{isGu ? 'Multiple Import Backup Data (મલ્ટિપલ બેકઅપ મર્જ)' : 'Multiple Import Backup Data'}</span>
           </button>
         </div>
 
@@ -579,151 +574,126 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
         </div>
       </div>
 
-      {/* 3. Language Selection */}
+      {/* 3. Language & Currency Settings (Task 15: Side-by-Side Dropdowns) */}
       <div
-        id="language-settings-card"
+        id="language-currency-card"
         className="p-5 sm:p-6 rounded-3xl bg-white border border-stone-200 shadow-xs space-y-4"
       >
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Globe className="w-4 h-4 text-stone-500 stroke-[2]" />
-            <h3 className="text-sm font-bold text-stone-800 tracking-tight">
-              {t.languageSelect} (20 World Languages)
-            </h3>
-          </div>
-          <span className="text-xs bg-stone-100 text-stone-600 px-2 py-0.5 rounded-full font-semibold">
-            {LANGUAGES.length}
-          </span>
-        </div>
-
-        <input
-          type="text"
-          placeholder={isGu ? 'ભાષા શોધો...' : 'Search languages...'}
-          value={langSearch}
-          onChange={(e) => setLangSearch(e.target.value)}
-          className="w-full px-3.5 py-2 text-xs rounded-xl border border-stone-200 bg-stone-50/50 outline-none focus:border-emerald-500"
-        />
-
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 max-h-48 overflow-y-auto pr-1">
-          {filteredLanguages.map((l) => {
-            const isSelected = currentLang === l.code;
-            return (
-              <button
-                key={l.code}
-                onClick={() => onSelectLanguage(l.code)}
-                className={`p-2.5 rounded-xl text-left border text-xs transition cursor-pointer flex items-center justify-between ${
-                  isSelected
-                    ? 'bg-emerald-50 border-emerald-500 text-emerald-900 font-bold shadow-xs'
-                    : 'border-stone-200 text-stone-600 hover:bg-stone-50'
-                }`}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {/* Language Dropdown */}
+          <div className="space-y-2">
+            <label className="text-xs font-bold text-stone-700 flex items-center justify-between">
+              <span className="flex items-center gap-1.5">
+                <Globe className="w-4 h-4 text-emerald-600 stroke-[2]" />
+                <span>{t.languageSelect}</span>
+              </span>
+              <span className="text-[10px] bg-stone-100 text-stone-600 px-2 py-0.5 rounded-full font-bold">
+                {LANGUAGES.length} {isGu ? 'ભાષાઓ' : 'Langs'}
+              </span>
+            </label>
+            <div className="relative">
+              <select
+                id="language-select-dropdown"
+                value={currentLang}
+                onChange={(e) => onSelectLanguage(e.target.value)}
+                className="w-full py-2.5 px-3.5 pr-8 text-xs font-semibold rounded-xl border border-stone-200 bg-stone-50 text-stone-900 outline-none focus:border-emerald-500 cursor-pointer appearance-none transition shadow-xs"
               >
-                <div>
-                  <div className="font-semibold">{l.name}</div>
-                  <div className="text-[10px] text-stone-400">{l.nativeName}</div>
-                </div>
-                {isSelected && <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0" />}
-              </button>
-            );
-          })}
+                {LANGUAGES.map((l) => (
+                  <option key={l.code} value={l.code}>
+                    {l.name} ({l.nativeName})
+                  </option>
+                ))}
+              </select>
+              <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-stone-400 text-xs">▼</div>
+            </div>
+          </div>
+
+          {/* Currency Dropdown */}
+          <div className="space-y-2">
+            <label className="text-xs font-bold text-stone-700 flex items-center justify-between">
+              <span className="flex items-center gap-1.5">
+                <Coins className="w-4 h-4 text-emerald-600 stroke-[2]" />
+                <span>{isGu ? 'પ્રાથમિક કરન્સી' : 'Primary Currency'}</span>
+              </span>
+              <span className="text-xs font-bold text-emerald-700 px-2 py-0.5 rounded-md bg-emerald-50 border border-emerald-200">
+                {currency}
+              </span>
+            </label>
+            <div className="relative">
+              <select
+                id="currency-select-dropdown"
+                value={currency}
+                onChange={(e) => onSelectCurrency(e.target.value)}
+                className="w-full py-2.5 px-3.5 pr-8 text-xs font-semibold rounded-xl border border-stone-200 bg-stone-50 text-stone-900 outline-none focus:border-emerald-500 cursor-pointer appearance-none transition shadow-xs"
+              >
+                {[
+                  { symbol: '₹', name: 'INR (₹ - Indian Rupee)' },
+                  { symbol: '$', name: 'USD ($ - US Dollar)' },
+                  { symbol: '€', name: 'EUR (€ - Euro)' },
+                  { symbol: '£', name: 'GBP (£ - British Pound)' },
+                  { symbol: '¥', name: 'JPY/CNY (¥ - Yen / Yuan)' },
+                  { symbol: 'د.إ', name: 'AED (د.إ - UAE Dirham)' },
+                  { symbol: 'CA$', name: 'CAD (CA$ - Canadian Dollar)' },
+                  { symbol: 'AU$', name: 'AUD (AU$ - Australian Dollar)' },
+                ].map((c) => (
+                  <option key={c.symbol} value={c.symbol}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+              <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-stone-400 text-xs">▼</div>
+            </div>
+          </div>
         </div>
       </div>
 
-      {/* 4. Currency Selector */}
-      <div
-        id="currency-settings-card"
-        className="p-5 sm:p-6 rounded-3xl bg-white border border-stone-200 shadow-xs space-y-3"
-      >
-        <div className="flex items-center gap-2">
-          <Coins className="w-4 h-4 text-stone-500 stroke-[2]" />
-          <h3 className="text-sm font-bold text-stone-800 tracking-tight">
-            {isGu ? 'પ્રાથમિક કરન્સી (Currency)' : 'Primary Currency Symbol'}
-          </h3>
-        </div>
-
-        <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
-          {[
-            { symbol: '₹', name: 'INR (₹)' },
-            { symbol: '$', name: 'USD ($)' },
-            { symbol: '€', name: 'EUR (€)' },
-            { symbol: '£', name: 'GBP (£)' },
-            { symbol: '¥', name: 'JPY/CNY (¥)' },
-            { symbol: 'د.إ', name: 'AED (د.إ)' },
-          ].map((c) => (
-            <button
-              key={c.symbol}
-              onClick={() => onSelectCurrency(c.symbol)}
-              className={`p-2.5 rounded-xl border text-xs text-center transition cursor-pointer ${
-                currency === c.symbol
-                  ? 'border-emerald-500 bg-emerald-50 text-emerald-900 font-bold'
-                  : 'border-stone-200 text-stone-600 hover:bg-stone-50'
-              }`}
-            >
-              <div className="text-base font-bold">{c.symbol}</div>
-              <div className="text-[10px] text-stone-400 mt-0.5">{c.name}</div>
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* 5. Appearance: Theme & Font */}
+      {/* 4. Appearance: Theme & Font (Task 16: Side-by-Side Dropdowns) */}
       <div
         id="appearance-settings-card"
         className="p-5 sm:p-6 rounded-3xl bg-white border border-stone-200 shadow-xs space-y-4"
       >
-        <div>
-          <div className="flex items-center gap-2 mb-2.5">
-            <Palette className="w-4 h-4 text-stone-500 stroke-[2]" />
-            <h3 className="text-sm font-bold text-stone-800 tracking-tight">{t.themeSelect}</h3>
-          </div>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-            {[
-              { id: 'cream', name: 'Paper Cream', bg: '#F9FBFC' },
-              { id: 'mint', name: 'Soft Mint', bg: '#EBFBEE' },
-              { id: 'lavender', name: 'Lavender', bg: '#FAF7FD' },
-              { id: 'light', name: 'Pure White', bg: '#FFFFFF' },
-            ].map((th) => (
-              <button
-                key={th.id}
-                onClick={() => onSelectTheme(th.id)}
-                className={`p-3 rounded-xl border text-xs text-left transition cursor-pointer flex items-center justify-between ${
-                  activeTheme === th.id
-                    ? 'border-emerald-500 bg-emerald-50/40 font-bold shadow-xs'
-                    : 'border-stone-200 hover:bg-stone-50'
-                }`}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {/* Theme Dropdown */}
+          <div className="space-y-2">
+            <label className="text-xs font-bold text-stone-700 flex items-center gap-1.5">
+              <Palette className="w-4 h-4 text-emerald-600 stroke-[2]" />
+              <span>{t.themeSelect}</span>
+            </label>
+            <div className="relative">
+              <select
+                id="theme-select-dropdown"
+                value={activeTheme}
+                onChange={(e) => onSelectTheme(e.target.value)}
+                className="w-full py-2.5 px-3.5 pr-8 text-xs font-semibold rounded-xl border border-stone-200 bg-stone-50 text-stone-900 outline-none focus:border-emerald-500 cursor-pointer appearance-none transition shadow-xs"
               >
-                <span className="text-stone-800">{th.name}</span>
-                <span
-                  className="w-4 h-4 rounded-full border border-stone-300"
-                  style={{ backgroundColor: th.bg }}
-                />
-              </button>
-            ))}
+                <option value="cream">Paper Cream ({isGu ? 'પેપર ક્રીમ' : 'Classic Warm'})</option>
+                <option value="mint">Soft Mint ({isGu ? 'સોફ્ટ મિન્ટ' : 'Refreshing Mint'})</option>
+                <option value="lavender">Lavender ({isGu ? 'લેવેન્ડર' : 'Soft Lavender'})</option>
+                <option value="light">Pure White ({isGu ? 'પ્યોર વ્હાઇટ' : 'Clean Modern'})</option>
+              </select>
+              <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-stone-400 text-xs">▼</div>
+            </div>
           </div>
-        </div>
 
-        <div className="border-t border-stone-100 pt-3">
-          <div className="flex items-center gap-2 mb-2.5">
-            <Type className="w-4 h-4 text-stone-500 stroke-[2]" />
-            <h3 className="text-sm font-bold text-stone-800 tracking-tight">{t.fontSelect}</h3>
-          </div>
-          <div className="grid grid-cols-3 gap-2">
-            {[
-              { id: 'sans', name: 'Sans (Modern)' },
-              { id: 'serif', name: 'Serif (Classic)' },
-              { id: 'mono', name: 'Mono (Ledger)' },
-            ].map((f) => (
-              <button
-                key={f.id}
-                onClick={() => onSelectFont(f.id)}
-                className={`py-2 px-3 rounded-xl border text-xs text-center transition cursor-pointer font-medium ${
-                  activeFont === f.id
-                    ? 'border-emerald-500 bg-emerald-50 text-emerald-900 font-bold'
-                    : 'border-stone-200 text-stone-700 hover:bg-stone-50'
-                }`}
+          {/* Font Dropdown */}
+          <div className="space-y-2">
+            <label className="text-xs font-bold text-stone-700 flex items-center gap-1.5">
+              <Type className="w-4 h-4 text-emerald-600 stroke-[2]" />
+              <span>{t.fontSelect}</span>
+            </label>
+            <div className="relative">
+              <select
+                id="font-select-dropdown"
+                value={activeFont}
+                onChange={(e) => onSelectFont(e.target.value)}
+                className="w-full py-2.5 px-3.5 pr-8 text-xs font-semibold rounded-xl border border-stone-200 bg-stone-50 text-stone-900 outline-none focus:border-emerald-500 cursor-pointer appearance-none transition shadow-xs"
               >
-                {f.name}
-              </button>
-            ))}
+                <option value="sans">Sans (Modern / આધુનિક)</option>
+                <option value="serif">Serif (Classic / ક્લાસિક)</option>
+                <option value="mono">Mono (Ledger / લેજર ડિજિટ)</option>
+              </select>
+              <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-stone-400 text-xs">▼</div>
+            </div>
           </div>
         </div>
       </div>
@@ -1086,6 +1056,89 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
         }}
         isGu={isGu}
       />
+
+      {/* Backup Guide Info Modal (Task 13) */}
+      {isBackupInfoOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs">
+          <div className="w-full max-w-lg bg-white rounded-3xl p-6 sm:p-7 shadow-2xl border border-stone-200 space-y-4 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-stone-100 pb-3">
+              <div className="flex items-center gap-2">
+                <div className="p-2 rounded-xl bg-emerald-50 text-emerald-700">
+                  <Database className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-stone-900">
+                    {isGu ? 'બેકઅપ અને રીસ્ટોર માર્ગદર્શિકા' : 'Backup & Restore Guide'}
+                  </h3>
+                  <p className="text-[11px] text-stone-500">
+                    {isGu ? 'ડેટા સુરક્ષા અને ટ્રાન્સફર સંબંધિત માહિતી' : 'Data security and transfer details'}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsBackupInfoOpen(false)}
+                className="w-8 h-8 rounded-full bg-stone-100 hover:bg-stone-200 flex items-center justify-center text-stone-600 font-bold text-sm cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-3.5 text-xs text-stone-600 leading-relaxed">
+              <div className="p-3.5 rounded-2xl bg-emerald-50/60 border border-emerald-200/80 space-y-1">
+                <div className="font-bold text-emerald-950 flex items-center gap-1.5">
+                  <DownloadCloud className="w-4 h-4 text-emerald-700" />
+                  <span>1. Export Backup Data (બેકઅપ એક્સપોર્ટ)</span>
+                </div>
+                <p className="text-emerald-900">
+                  {isGu
+                    ? 'તમારા તમામ આવક-ખર્ચના વ્યવહારો, પર્સનલ ડાયરીની એન્ટ્રીઓ, ઉધાર-જમા ખાતા અને પ્રોફાઇલ ડેટાને મિલિટરી-ગ્રેડ AES-GCM ૨૫૬-બીટથી એન્ક્રિપ્ટ કરીને તમારા ફોનના Downloads ફોલ્ડરમાં સાચવે છે.'
+                    : 'Encrypted with AES-GCM 256-bit military-grade encryption and saved directly into your device Downloads folder.'}
+                </p>
+              </div>
+
+              <div className="p-3.5 rounded-2xl bg-stone-50 border border-stone-200 space-y-1">
+                <div className="font-bold text-stone-900 flex items-center gap-1.5">
+                  <Upload className="w-4 h-4 text-stone-700" />
+                  <span>2. Import Backup Data (બેકઅપ ઇમ્પોર્ટ)</span>
+                </div>
+                <p className="text-stone-700">
+                  {isGu
+                    ? 'નવો ફોન લીધા પછી અથવા એપ ફરી ઇન્સ્ટોલ કર્યા પછી અગાઉ સાચવેલી .edb કે .json ફાઈલ પસંદ કરી ૧૨-શબ્દોની કી વડે તમામ ડેટા એક ક્લિકમાં પાછો લાવો.'
+                    : 'Select your saved .edb or .json file and decrypt using your 12-word passphrase to restore everything.'}
+                </p>
+              </div>
+
+              <div className="p-3.5 rounded-2xl bg-indigo-50/60 border border-indigo-200/80 space-y-1">
+                <div className="font-bold text-indigo-950 flex items-center gap-1.5">
+                  <Layers className="w-4 h-4 text-indigo-700" />
+                  <span>3. Multiple Import Backup Data (મલ્ટિપલ બેકઅપ મર્જ)</span>
+                </div>
+                <p className="text-indigo-900">
+                  {isGu
+                    ? 'જો તમારી પાસે અલગ-અલગ તારીખો કે ડિવાઇસના એકથી વધુ બેકઅપ હોય, તો તેને ડુપ્લિકેટ વગર સ્માર્ટ રીતે ભેગા (merge) કરી આપે છે.'
+                    : 'Merge multiple backup files without creating duplicate transactions.'}
+                </p>
+              </div>
+
+              <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-[11px] flex items-start gap-2">
+                <ShieldCheck className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
+                <span>
+                  {isGu
+                    ? 'સલાહ: બેકઅપ ફાઈલ સેવ થયા બાદ તેને તમારા ગૂગલ ડ્રાઈવ કે ઈમેલમાં સાચવી રાખો જેથી ફોન ખોવાઈ જાય તો પણ તમારો હિસાબ સુરક્ષિત રહે.'
+                    : 'Tip: After exporting, save a copy to your Google Drive or email so your records stay safe even if you switch phones.'}
+                </span>
+              </div>
+            </div>
+
+            <button
+              onClick={() => setIsBackupInfoOpen(false)}
+              className="w-full py-2.5 rounded-xl bg-stone-900 hover:bg-stone-800 text-white font-bold text-xs cursor-pointer transition shadow-xs"
+            >
+              {isGu ? 'સમજાઈ ગયું (Close)' : 'Got it'}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

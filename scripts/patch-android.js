@@ -358,6 +358,121 @@ public class NativeBridgePlugin extends Plugin {
         }
     }
 
+    @PluginMethod
+    public void requestAllNativePermissions(PluginCall call) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            requestPermissionForAliases(new String[]{"sms", "notifications"}, call, "allPermCallback");
+        } else {
+            requestPermissionForAlias("sms", call, "smsPermCallback");
+        }
+    }
+
+    @PermissionCallback
+    private void allPermCallback(PluginCall call) {
+        boolean smsGranted = ContextCompat.checkSelfPermission(getContext(), Manifest.permission.READ_SMS) == PackageManager.PERMISSION_GRANTED;
+        boolean notifGranted = true;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            notifGranted = ContextCompat.checkSelfPermission(getContext(), Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED;
+        }
+        JSObject res = new JSObject();
+        res.put("sms", smsGranted);
+        res.put("notifications", notifGranted);
+        res.put("granted", smsGranted && notifGranted);
+        call.resolve(res);
+    }
+
+    @PluginMethod
+    public void saveFileToDownloads(PluginCall call) {
+        String fileName = call.getString("fileName", "expense_report.csv");
+        String mimeType = call.getString("mimeType", "text/csv");
+        String base64Data = call.getString("base64Data", "");
+        String textContent = call.getString("textContent", "");
+
+        try {
+            byte[] data;
+            if (base64Data != null && !base64Data.isEmpty()) {
+                data = android.util.Base64.decode(base64Data, android.util.Base64.DEFAULT);
+            } else {
+                data = textContent.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+            }
+
+            java.io.File downloadDir = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS);
+            if (!downloadDir.exists()) {
+                downloadDir.mkdirs();
+            }
+            java.io.File outFile = new java.io.File(downloadDir, fileName);
+            java.io.FileOutputStream fos = new java.io.FileOutputStream(outFile);
+            fos.write(data);
+            fos.flush();
+            fos.close();
+
+            android.media.MediaScannerConnection.scanFile(
+                getContext(),
+                new String[]{outFile.getAbsolutePath()},
+                new String[]{mimeType},
+                null
+            );
+
+            JSObject res = new JSObject();
+            res.put("success", true);
+            res.put("filePath", outFile.getAbsolutePath());
+            res.put("fileName", fileName);
+            call.resolve(res);
+        } catch (Exception e) {
+            call.reject("Failed to save file: " + e.getMessage());
+        }
+    }
+
+    @PluginMethod
+    public void shareFile(PluginCall call) {
+        String fileName = call.getString("fileName", "expense_report.csv");
+        String mimeType = call.getString("mimeType", "text/csv");
+        String base64Data = call.getString("base64Data", "");
+        String textContent = call.getString("textContent", "");
+        String title = call.getString("title", "Expense Diary Report");
+
+        try {
+            byte[] data;
+            if (base64Data != null && !base64Data.isEmpty()) {
+                data = android.util.Base64.decode(base64Data, android.util.Base64.DEFAULT);
+            } else {
+                data = textContent.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+            }
+
+            java.io.File cacheDir = new java.io.File(getContext().getCacheDir(), "shared_files");
+            if (!cacheDir.exists()) {
+                cacheDir.mkdirs();
+            }
+            java.io.File sharedFile = new java.io.File(cacheDir, fileName);
+            java.io.FileOutputStream fos = new java.io.FileOutputStream(sharedFile);
+            fos.write(data);
+            fos.flush();
+            fos.close();
+
+            Uri fileUri = androidx.core.content.FileProvider.getUriForFile(
+                getContext(),
+                getContext().getPackageName() + ".fileprovider",
+                sharedFile
+            );
+
+            Intent shareIntent = new Intent(Intent.ACTION_SEND);
+            shareIntent.setType(mimeType);
+            shareIntent.putExtra(Intent.EXTRA_STREAM, fileUri);
+            shareIntent.putExtra(Intent.EXTRA_SUBJECT, title);
+            shareIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+
+            Intent chooser = Intent.createChooser(shareIntent, title);
+            chooser.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            getContext().startActivity(chooser);
+
+            JSObject res = new JSObject();
+            res.put("success", true);
+            call.resolve(res);
+        } catch (Exception e) {
+            call.reject("Failed to share file: " + e.getMessage());
+        }
+    }
+
     private boolean hasUsageStatsPermission() {
         AppOpsManager appOps = (AppOpsManager) getContext().getSystemService(Context.APP_OPS_SERVICE);
         int mode = appOps.checkOpNoThrow(
@@ -397,11 +512,12 @@ public class NativeBridgePlugin extends Plugin {
 safeWrite(path.join(javaSrcDir, 'NativeBridgePlugin.java'), nativePluginCode);
 console.log('Injected NativeBridgePlugin.java');
 
-// 4. Register plugin in MainActivity.java
+// 4. Register plugin in MainActivity.java with DownloadListener
 const mainActivityPath = path.join(javaSrcDir, 'MainActivity.java');
 const mainActivityCode = `package com.expensediary.ai;
 
 import android.os.Bundle;
+import android.webkit.DownloadListener;
 import com.getcapacitor.BridgeActivity;
 
 public class MainActivity extends BridgeActivity {
@@ -409,11 +525,35 @@ public class MainActivity extends BridgeActivity {
     public void onCreate(Bundle savedInstanceState) {
         registerPlugin(NativeBridgePlugin.class);
         super.onCreate(savedInstanceState);
+
+        if (this.bridge != null && this.bridge.getWebView() != null) {
+            this.bridge.getWebView().setDownloadListener(new DownloadListener() {
+                @Override
+                public void onDownloadStart(String url, String userAgent, String contentDisposition, String mimetype, long contentLength) {
+                    try {
+                        android.content.Intent i = new android.content.Intent(android.content.Intent.ACTION_VIEW);
+                        i.setData(android.net.Uri.parse(url));
+                        startActivity(i);
+                    } catch (Exception ignored) {}
+                }
+            });
+        }
     }
 }
 `;
 safeWrite(mainActivityPath, mainActivityCode);
-console.log('Injected MainActivity.java with NativeBridgePlugin registered');
+console.log('Injected MainActivity.java with NativeBridgePlugin and DownloadListener');
+
+// Ensure res/xml/file_paths.xml exists for FileProvider
+const resXmlDir = path.join(androidDir, 'app', 'src', 'main', 'res', 'xml');
+fs.mkdirSync(resXmlDir, { recursive: true });
+const filePathsXml = `<?xml version="1.0" encoding="utf-8"?>
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+    <cache-path name="shared_files" path="shared_files/" />
+    <external-path name="downloads" path="Download/" />
+</paths>
+`;
+safeWrite(path.join(resXmlDir, 'file_paths.xml'), filePathsXml);
 
 // 5. Patch AndroidManifest.xml with tools namespace and all runtime permissions
 const manifestPath = path.join(androidDir, 'app', 'src', 'main', 'AndroidManifest.xml');
@@ -436,8 +576,25 @@ if (fs.existsSync(manifestPath)) {
     // Clean old permissions if needed
     m = m.replace(/<uses-permission\s+android:name="android\.permission\.(RECEIVE_SMS|READ_SMS|POST_NOTIFICATIONS|VIBRATE|WAKE_LOCK|USE_BIOMETRIC|PACKAGE_USAGE_STATS)"[^>]*\/>/g, '');
     m = m.replace('<application', permissions.trim() + '\n    <application');
+
+    // Add FileProvider to application if not present
+    if (!/androidx\.core\.content\.FileProvider/.test(m)) {
+      const provider = `
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="\${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+      `;
+      m = m.replace('</application>', provider + '\n    </application>');
+    }
+
     safeWrite(manifestPath, m);
-    console.log('Patched AndroidManifest.xml with all required native permissions');
+    console.log('Patched AndroidManifest.xml with all required native permissions and FileProvider');
   }
 }
 

@@ -34,11 +34,11 @@ export const AuthLockScreen: React.FC<AuthLockScreenProps> = ({
   const isGu = currentLang === 'gu';
 
   const handleKeyClick = (digit: string) => {
-    if (pin.length < 6) {
+    if (pin.length < 4) {
       const nextPin = pin + digit;
       setPin(nextPin);
       setErrorMsg(null);
-      if (nextPin.length >= 4) {
+      if (nextPin.length === 4) {
         checkPin(nextPin);
       }
     }
@@ -60,7 +60,7 @@ export const AuthLockScreen: React.FC<AuthLockScreenProps> = ({
       const match = await verifyPBKDF2(candidate, securityConfig.pinHash, securityConfig.pinSalt);
       if (match) {
         onUnlock();
-      } else if (candidate.length >= 6) {
+      } else {
         setErrorMsg(isGu ? 'ખોટો પિન. ફરી પ્રયાસ કરો.' : 'Incorrect PIN. Try again.');
         setPin('');
       }
@@ -73,11 +73,18 @@ export const AuthLockScreen: React.FC<AuthLockScreenProps> = ({
   };
 
   const handleBiometricClick = async () => {
-    if (!securityConfig.biometricsEnabled) return;
-    const success = await authenticateWithBiometrics();
-    if (success) {
-      onUnlock();
-    }
+    try {
+      const success = await authenticateWithBiometrics();
+      if (success) {
+        onUnlock();
+        return;
+      }
+    } catch {}
+    setErrorMsg(
+      isGu
+        ? 'ફિંગરપ્રિન્ટ મેળ ખાતી નથી. ૪-અંકનો પિન દાખલ કરો.'
+        : 'Fingerprint not recognized. Please enter 4-digit PIN.'
+    );
   };
 
   // Forgot PIN: verify 12 words
@@ -212,17 +219,14 @@ export const AuthLockScreen: React.FC<AuthLockScreenProps> = ({
         ))}
 
         <div className="grid grid-cols-3 gap-3 sm:gap-4">
-          {/* Biometrics button */}
+          {/* Biometrics button (Fingerprint for Main App Unlock) */}
           <button
+            id="fingerprint-unlock-btn"
             onClick={handleBiometricClick}
-            disabled={!securityConfig.biometricsEnabled}
-            className={`h-14 sm:h-16 rounded-2xl flex items-center justify-center transition cursor-pointer border ${
-              securityConfig.biometricsEnabled
-                ? 'bg-stone-800 hover:bg-stone-700 text-emerald-400 border-stone-700/50 active:scale-95'
-                : 'opacity-0 cursor-default border-transparent'
-            }`}
+            className="h-14 sm:h-16 rounded-2xl bg-stone-800 hover:bg-stone-700 active:bg-stone-600 text-emerald-400 flex items-center justify-center transition cursor-pointer border border-stone-700/50 active:scale-95 shadow-xs"
+            title={isGu ? 'મેઈન એપ ફિંગરપ્રિન્ટ વડે અનલૉક કરો' : 'Unlock Main App with Fingerprint'}
           >
-            <Fingerprint className="w-6 h-6" />
+            <Fingerprint className="w-6 h-6 stroke-[2.2]" />
           </button>
 
           {/* 0 digit */}

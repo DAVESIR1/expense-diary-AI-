@@ -1,0 +1,40 @@
+{
+  "timestamp": "2026-09-04T11:15:57.864Z",
+  "results": [
+    {
+      "test": "Onboarding Step 1 (Profile)",
+      "status": "PASS"
+    },
+    {
+      "test": "Onboarding Flow Completed",
+      "status": "PASS"
+    },
+    {
+      "test": "Add Transaction & Balance Update",
+      "status": "PASS",
+      "netBalance": "STEP 1/4: PROFILE"
+    },
+    {
+      "test": "Diary Security & PIN Setup Card",
+      "status": "PASS"
+    },
+    {
+      "test": "Diary Money Borrowed/Lent Tab",
+      "status": "PASS"
+    },
+    {
+      "test": "Reports Screen & Layout Switching",
+      "status": "PASS"
+    },
+    {
+      "test": "Settings & Permissions & Version v1.1.0",
+      "status": "PASS",
+      "versionText": "STEP 1/4: PROFILE\nGujarati\nEnglish\nHindi\nSpanish\nChinese\nArabic\nBengali\nPortuguese\nRussian\nJapanese\nFrench\nGerman\nKorean\nTurkish\nItalian\nVietnamese\nTamil\nTelugu\nMarathi\nUrdu\nPlease enter your name\nWelcome to Expense Diary!\n\nLet’s set up your private, offline-first financial diary in seconds.\n\nYOUR NAME\nPRIMARY CURRENCY\nINR (₹)\nUSD ($)\nEUR (€)\nGBP (£)\nJPY/CNY (¥)\nAED (د.إ)\nMONTHLY BUDGET GOAL (OPTIONAL)\nContinue\nExpense Diary\n\nFri, Sep 4, 2026\n\nGU (Gujarati)\nEN (English)\nHI (Hindi)\nES (Spanish)\nZH (Chinese)\nAR (Arabic)\nBN (Bengali)\nPT (Portuguese)\nRU (Russian)\nJA (Japanese)\nFR (French)\nDE (German)\nKO (Korean)\nTR (Turkish)\nIT (Italian)\nVI (Vietnamese)\nTA (Tamil)\nTE (Telugu)\nMR (Marathi)\nUR (Urdu)\nE\nSettings\n\nSecurity, encrypted backups, language, appearance, and app info\n\nSecurity & PIN\nSetup Required\n\nYour data is secured with PIN, Biometrics, and a 12-word cryptographic recovery passphrase.\n\nReconfigure Security / PIN\nView 12-Word Passphrase\nPersonal Diary Lock\nRequire PIN verification to open Personal Diary\nEncrypted Local Backup & Zero-Knowledge Cloud Vault\n\nAES-GCM 256-bit authenticated encryption. Your passphrase or PIN is never transmitted unencrypted.\n\nExport Encrypted Backup (.edb)\nRestore Single File\nMulti-File / Folder Restore & Deduplicated Merge\nZero-Knowledge Cloud Vault\nUpload Snapshot\nNo cloud snapshots recorded yet.\nSelect Language (20 World Languages)\n20\nGujarati\nગુજરાતી\nEnglish\nEnglish\nHindi\nहिन्दी\nSpanish\nEspañol\nChinese\n中文 (简体)\nArabic\nالعربية\nBengali\nবাংলা\nPortuguese\nPortuguês\nRussian\nРусский\nJapanese\n日本語\nFrench\nFrançais\nGerman\nDeutsch\nKorean\n한국어\nTurkish\nTürkçe\nItalian\nItaliano\nVietnamese\nTiếng Việt\nTamil\nதமிழ்\nTelugu\nతెలుగు\nMarathi\nमराठी\nUrdu\nاردو\nPrimary Currency Symbol\n₹\nINR (₹)\n$\nUSD ($)\n€\nEUR (€)\n£\nGBP (£)\n¥\nJPY/CNY (¥)\nد.إ\nAED (د.إ)\nColor Theme\nPaper Cream\nSoft Mint\nLavender\nPure White\nFont Style\nSans (Modern)\nSerif (Classic)\nMono (Ledger)\nCategory Management\nExpense\nIncome\nAdd\nFood & Dining\nExpense\nGroceries\nExpense\nShopping\nExpense\nBills & Utilities\nExpense\nTravel & Fuel\nExpense\nHealth & Medicines\nExpense\nEntertainment\nExpense\nSalary\nIncome\nBusiness & Freelance\nIncome\nInvestment Returns\nIncome\nOther Income\nIncome\nOther Expense\nExpense\nTESTING & RESET\nLoad Sample Data\nClear All Transactions\nApp Permissions\n\nThese permissions are required for core features. Tap each to grant access.\n\nSMS Smart Detection\nAuto-detect expenses from bank SMS\nGrant\nNotifications\nDaily reminders & expense alerts\nGranted\nApp Usage Data\nSmart reminders after using payment apps\nOpen Settings\nExpense Diary\nv1.1.0 Stable\n\nExpense Diary is a 100% private, offline-first personal finance and diary application with AES-GCM 256-bit encryption and multi-language support.\n\nEncryption: AES-GCM-256\nLicense: MIT\nHome\nDiary\nReport\nProfile\nSettings\nAdd Expense\nAdd Income\nAMOUNT (₹)\n₹\nTITLE / DESCRIPTION\nCATEGORY\nFood & Dining\nGroceries\nShopping\nBills & Utilities\nTravel & Fuel\nHealth & Medicines\nEntertainment\nOther Expense\nPAYMENT MODE\nUPI\nCash\nCard\nBank Transfer\nPERSON OR MOBILE NUMBER\nMOBILE NUMBER\nDATE\nTIME\nNOTES (OPTIONAL)\nCancel\nSave"
+    },
+    {
+      "test": "Language Switcher (Gujarati)",
+      "status": "PASS"
+    }
+  ],
+  "consoleErrors": []
+}

@@ -92,8 +92,8 @@ export const SecuritySetupModal: React.FC<SecuritySetupModalProps> = ({
 
   const handleSaveSecurity = async () => {
     setErrorMsg(null);
-    if (pin.length < 4 || pin.length > 6) {
-      setErrorMsg(isGu ? 'પિન ૪ થી ૬ અંકનો હોવો જોઈએ.' : 'PIN must be 4 to 6 digits.');
+    if (pin.length !== 4) {
+      setErrorMsg(isGu ? 'પિન બરાબર ૪ અંકનો હોવો જોઈએ.' : 'PIN must be exactly 4 digits.');
       return;
     }
     if (pin !== confirmPin) {
@@ -246,35 +246,39 @@ export const SecuritySetupModal: React.FC<SecuritySetupModalProps> = ({
           <div className="space-y-4">
             <div className="space-y-3">
               <div>
-                <label className="text-xs font-semibold text-stone-700 block mb-1">
-                  {t.enterPin} (૪ થી ૬ અંક / 4-6 digits)
+                <label className="text-xs font-bold text-stone-700 block mb-1">
+                  {isGu ? '૪-અંકનો સુરક્ષા પિન' : '4-Digit Security PIN'}
                 </label>
                 <div className="relative">
                   <Lock className="w-4 h-4 text-stone-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
                   <input
                     type="password"
-                    maxLength={6}
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    maxLength={4}
                     value={pin}
-                    onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))}
+                    onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 4))}
                     placeholder="••••"
-                    className="w-full pl-10 pr-3.5 py-2.5 text-center text-lg font-mono tracking-widest rounded-xl border border-stone-200 bg-stone-50/50 outline-none focus:border-emerald-500"
+                    className="w-full pl-10 pr-3.5 py-2.5 text-center text-xl font-mono tracking-widest rounded-xl border border-stone-200 bg-stone-50/50 outline-none focus:border-emerald-500"
                   />
                 </div>
               </div>
 
               <div>
-                <label className="text-xs font-semibold text-stone-700 block mb-1">
+                <label className="text-xs font-bold text-stone-700 block mb-1">
                   {t.confirmPin}
                 </label>
                 <div className="relative">
                   <Key className="w-4 h-4 text-stone-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
                   <input
                     type="password"
-                    maxLength={6}
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    maxLength={4}
                     value={confirmPin}
-                    onChange={(e) => setConfirmPin(e.target.value.replace(/\D/g, ''))}
+                    onChange={(e) => setConfirmPin(e.target.value.replace(/\D/g, '').slice(0, 4))}
                     placeholder="••••"
-                    className="w-full pl-10 pr-3.5 py-2.5 text-center text-lg font-mono tracking-widest rounded-xl border border-stone-200 bg-stone-50/50 outline-none focus:border-emerald-500"
+                    className="w-full pl-10 pr-3.5 py-2.5 text-center text-xl font-mono tracking-widest rounded-xl border border-stone-200 bg-stone-50/50 outline-none focus:border-emerald-500"
                   />
                 </div>
               </div>

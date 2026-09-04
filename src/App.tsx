@@ -28,11 +28,13 @@ import { TransactionModal } from './components/TransactionModal';
 import { OnboardingModal } from './components/OnboardingModal';
 import { AIAssistantModal } from './components/AIAssistantModal';
 import { AndroidSMSPermissionModal } from './components/AndroidSMSPermissionModal';
+import { SmartTransactionScanModal, ScannedCandidate } from './components/SmartTransactionScanModal';
 import { AuthLockScreen } from './components/AuthLockScreen';
 import { checkAndTriggerDailyReminder } from './services/notifications';
 import { hashWithPBKDF2 } from './services/security';
 import { MigrationManager } from './services/dataMigration';
 import { NativeBridgeService } from './services/nativeBridge';
+import { parseTransactionMessage } from './utils/smsParser';
 
 // Sequential data migration & backward compatibility (§21)
 MigrationManager.runMigrations();
@@ -185,6 +187,64 @@ export default function App() {
   // Modal State for adding transactions
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [addModalType, setAddModalType] = useState<TransactionType>('expense');
+
+  // Smart SMS Scan State (Task 2 & 17)
+  const [isScanModalOpen, setIsScanModalOpen] = useState(false);
+  const [scannedCandidates, setScannedCandidates] = useState<ScannedCandidate[]>([]);
+
+  const handleScanSMS = async (): Promise<number> => {
+    try {
+      const messages = await NativeBridgeService.readRecentBankSMS();
+      if (!messages || messages.length === 0) return 0;
+
+      const candidates: ScannedCandidate[] = [];
+      for (const msg of messages) {
+        const parsed = parseTransactionMessage(msg.body, categories, 'sms');
+        if (parsed) {
+          const alreadyExists = transactions.some(
+            (t) =>
+              (t.evidence && t.evidence.includes(msg.body)) ||
+              (t.amount === parsed.amount && t.date === parsed.date && t.title === parsed.title)
+          );
+          if (!alreadyExists) {
+            candidates.push({
+              id: msg.id || `scanned-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
+              selected: true,
+              type: parsed.type,
+              amount: parsed.amount,
+              title: parsed.title,
+              category: parsed.category,
+              vendorOrPerson: parsed.vendorOrPerson,
+              paymentMode: parsed.paymentMode,
+              date: parsed.date,
+              time: parsed.time,
+              evidence: msg.body,
+              confidence: parsed.confidence,
+            });
+          }
+        }
+      }
+
+      if (candidates.length > 0) {
+        setScannedCandidates(candidates);
+        setIsScanModalOpen(true);
+        return candidates.length;
+      }
+      return 0;
+    } catch {
+      return 0;
+    }
+  };
+
+  // Auto-scan on startup once unlocked and onboarded (Task 2)
+  useEffect(() => {
+    if (!isAppLocked && !showOnboarding) {
+      const timer = setTimeout(() => {
+        handleScanSMS();
+      }, 1200);
+      return () => clearTimeout(timer);
+    }
+  }, [isAppLocked, showOnboarding]);
 
   // Persistence Effects
   useEffect(() => {
@@ -536,17 +596,6 @@ export default function App() {
               </button>
             )}
 
-            {/* Smart Assistant Trigger */}
-            <button
-              id="header-ai-assistant-btn"
-              onClick={() => setIsAiModalOpen(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-xs font-semibold transition cursor-pointer"
-              title={t.aiAssistant}
-            >
-              <Sparkles className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">{t.aiAssistant}</span>
-            </button>
-
             {/* Language Selector */}
             <div className="relative flex items-center bg-white border border-stone-200 hover:border-stone-300 rounded-full px-2.5 py-1 text-xs shadow-xs transition cursor-pointer">
               <Globe className="w-3.5 h-3.5 text-stone-400 pointer-events-none mr-1" />
@@ -596,6 +645,9 @@ export default function App() {
             categories={categories}
             t={t}
             currency={currency}
+            currentLang={currentLang}
+            profile={profile}
+            onTriggerScan={handleScanSMS}
           />
         )}
 
@@ -712,6 +764,20 @@ export default function App() {
         }}
         currentLang={currentLang}
         t={t}
+      />
+
+      {/* Smart Financial Transaction Scan Modal (Task 2 & 17) */}
+      <SmartTransactionScanModal
+        isOpen={isScanModalOpen}
+        onClose={() => setIsScanModalOpen(false)}
+        candidates={scannedCandidates}
+        categories={categories}
+        currency={currency}
+        currentLang={currentLang}
+        t={t}
+        onConfirmImport={(approved) => {
+          setTransactions((prev) => [...approved, ...prev]);
+        }}
       />
     </div>
   );
