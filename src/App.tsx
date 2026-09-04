@@ -478,17 +478,36 @@ export default function App() {
   }, [profile.enableDailyReminder, profile.dailyReminderTime, t, transactions]);
 
   // Transaction Handlers
+  const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
+
   const handleOpenAddModal = (type: TransactionType) => {
+    setEditingTransaction(null);
     setAddModalType(type);
     setIsAddModalOpen(true);
   };
 
+  const handleEditTransaction = (tx: Transaction) => {
+    setEditingTransaction(tx);
+    setAddModalType(tx.type);
+    setIsAddModalOpen(true);
+  };
+
   const handleAddTransaction = (newTx: Omit<Transaction, 'id'>) => {
-    const tx: Transaction = {
-      ...newTx,
-      id: `tx-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
-    };
-    setTransactions((prev) => [tx, ...prev]);
+    if (editingTransaction) {
+      const updated: Transaction = {
+        ...newTx,
+        id: editingTransaction.id,
+        updatedAt: new Date().toISOString(),
+      };
+      setTransactions((prev) => prev.map((t) => (t.id === editingTransaction.id ? updated : t)));
+      setEditingTransaction(null);
+    } else {
+      const tx: Transaction = {
+        ...newTx,
+        id: `tx-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
+      };
+      setTransactions((prev) => [tx, ...prev]);
+    }
   };
 
   const handleDeleteTransaction = (id: string) => {
@@ -811,6 +830,7 @@ export default function App() {
             transactions={transactions}
             onOpenAddModal={handleOpenAddModal}
             onDeleteTransaction={handleDeleteTransaction}
+            onEditTransaction={handleEditTransaction}
             pendingAiMessages={pendingAiMessages}
             onConfirmAiMessage={handleConfirmAiMessage}
             onDismissAiMessage={handleDismissAiMessage}
@@ -904,13 +924,17 @@ export default function App() {
       {/* Transaction Modal (Add Income / Expense) */}
       <TransactionModal
         isOpen={isAddModalOpen}
-        onClose={() => setIsAddModalOpen(false)}
+        onClose={() => {
+          setIsAddModalOpen(false);
+          setEditingTransaction(null);
+        }}
         onSave={handleAddTransaction}
         type={addModalType}
         categories={categories}
         t={t}
         currency={currency}
         currentLang={currentLang}
+        initialData={editingTransaction || undefined}
       />
 
       {/* Assistant Modal */}

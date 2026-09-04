@@ -41,6 +41,8 @@ import { verifyPBKDF2, normalizeWords } from '../services/security';
 import { SecuritySetupModal } from './SecuritySetupModal';
 import { MultiRestoreModal } from './MultiRestoreModal';
 import { NativeBridgeService, NativePermissionsStatus } from '../services/nativeBridge';
+import { CloudSyncService, CloudSyncConfig } from '../services/cloudSync';
+import { AppVaultData } from '../services/vaultStorage';
 
 interface SettingsScreenProps {
   currentLang: string;
@@ -190,7 +192,74 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   const [cloudBackups, setCloudBackups] = useState<CloudBackupMetadata[]>([]);
   const [isCloudUploading, setIsCloudUploading] = useState(false);
 
+  // Firebase Real-time Cloud Sync & Hidden Vault
+  const [cloudSyncConfig, setCloudSyncConfig] = useState<CloudSyncConfig>(CloudSyncService.getConfig());
+  const [isCloudSyncModalOpen, setIsCloudSyncModalOpen] = useState(false);
+  const [isSyncingNow, setIsSyncingNow] = useState(false);
+  const [cloudSyncNotice, setCloudSyncNotice] = useState<{ text: string; isError?: boolean } | null>(null);
+  const [tempProjectId, setTempProjectId] = useState(cloudSyncConfig.projectId || '');
+  const [tempAutoSync, setTempAutoSync] = useState(cloudSyncConfig.autoSync ?? true);
+  const [tempEnabled, setTempEnabled] = useState(cloudSyncConfig.enabled ?? false);
+  const [tempDocId, setTempDocId] = useState(cloudSyncConfig.userSyncId || 'my_primary_vault');
+
   const isGu = currentLang === 'gu';
+
+  const handleSaveCloudSyncSettings = () => {
+    const updated = CloudSyncService.saveConfig({
+      enabled: tempEnabled,
+      projectId: tempProjectId.trim(),
+      userSyncId: tempDocId.trim() || 'my_primary_vault',
+      autoSync: tempAutoSync,
+    });
+    setCloudSyncConfig(updated);
+    setIsCloudSyncModalOpen(false);
+    showNotice(isGu ? 'ક્લાઉડ સેટિંગ્સ સફળતાપૂર્વક સાચવાયા!' : 'Cloud settings saved successfully!');
+  };
+
+  const handleTriggerCloudSync = async () => {
+    if (!cloudSyncConfig.enabled || !cloudSyncConfig.projectId?.trim()) {
+      setIsCloudSyncModalOpen(true);
+      return;
+    }
+    const recoveryWordsRaw = localStorage.getItem('expense_diary_recovery_words');
+    const words = recoveryWordsRaw ? JSON.parse(recoveryWordsRaw) : [];
+    if (!words || words.length < 12) {
+      alert(isGu ? 'કૃપા કરીને સિક્યોરિટી સેટઅપ પૂર્ણ કરી 12 શબ્દો મેળવો.' : 'Please complete security setup with 12 recovery words first.');
+      return;
+    }
+
+    setIsSyncingNow(true);
+    setCloudSyncNotice(null);
+    try {
+      const fullVaultData: AppVaultData = {
+        version: 2,
+        updatedAt: new Date().toISOString(),
+        transactions,
+        diaryEntries,
+        borrowedLentRecords,
+        categories,
+        profile,
+        securityConfig,
+        savedPassphraseWords: words,
+        lang: currentLang,
+        theme: activeTheme,
+        font: activeFont,
+        currency,
+        onboarded: true,
+      };
+      const res = await CloudSyncService.uploadVaultToCloud(fullVaultData, words);
+      if (res.success) {
+        setCloudSyncNotice({ text: isGu ? 'ક્લાઉડમાં ડેટા સફળતાપૂર્વક સિંક થયો!' : 'Data synced to cloud successfully!' });
+        setCloudSyncConfig(CloudSyncService.getConfig());
+      } else {
+        setCloudSyncNotice({ text: res.error || 'Sync failed', isError: true });
+      }
+    } catch (e: any) {
+      setCloudSyncNotice({ text: e.message || 'Sync error', isError: true });
+    } finally {
+      setIsSyncingNow(false);
+    }
+  };
 
   useEffect(() => {
     loadCloudBackups();
@@ -694,6 +763,81 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                   </button>
                 </div>
               ))}
+            </div>
+          )}
+        </div>
+
+        {/* Real-time Hybrid Sync & Free Firebase Cloud Sync Card */}
+        <div className="p-4 rounded-2xl bg-emerald-50/60 border border-emerald-200/90 space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <ShieldCheck className="w-4 h-4 text-emerald-700 shrink-0" />
+              <div>
+                <span className="text-xs font-bold text-emerald-950 block">
+                  {isGu ? 'હાઇબ્રિડ સિંક (હિડન ફોલ્ડર + ફ્રી ક્લાઉડ ડેટાબેઝ)' : 'Hybrid Real-Time Cloud Sync'}
+                </span>
+                <span className="text-[10px] text-emerald-700 font-medium">
+                  {isGu ? 'ફોન સ્ટોરેજ (.smart_vault) અને ક્લાઉડ વચ્ચે ઓટો સિંક' : 'Zero-knowledge encrypted cloud & hidden local vault'}
+                </span>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => {
+                  setTempEnabled(cloudSyncConfig.enabled);
+                  setTempProjectId(cloudSyncConfig.projectId || '');
+                  setTempAutoSync(cloudSyncConfig.autoSync ?? true);
+                  setTempDocId(cloudSyncConfig.userSyncId || 'my_primary_vault');
+                  setIsCloudSyncModalOpen(true);
+                }}
+                className="py-1 px-2.5 rounded-xl border border-emerald-300 bg-white hover:bg-emerald-50 text-emerald-800 font-bold text-[11px] transition cursor-pointer"
+              >
+                {isGu ? 'સેટિંગ્સ / ગાઈડ' : 'Setup & Guide'}
+              </button>
+
+              <button
+                type="button"
+                onClick={handleTriggerCloudSync}
+                disabled={isSyncingNow}
+                className="py-1 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px] transition cursor-pointer flex items-center gap-1 shadow-2xs disabled:opacity-50"
+              >
+                <RefreshCw className={`w-3 h-3 ${isSyncingNow ? 'animate-spin' : ''}`} />
+                <span>{isSyncingNow ? (isGu ? 'સિંક...' : 'Syncing...') : (isGu ? 'હમણાં સિંક કરો' : 'Sync Now')}</span>
+              </button>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-emerald-100 text-[11px]">
+            <div className="flex items-center gap-1.5">
+              <span className="text-stone-500">{isGu ? 'ક્લાઉડ સ્ટેટસ:' : 'Cloud Status:'}</span>
+              <span className={`font-bold px-2 py-0.5 rounded-md ${
+                cloudSyncConfig.enabled && cloudSyncConfig.projectId
+                  ? 'bg-emerald-100 text-emerald-800'
+                  : 'bg-stone-100 text-stone-600'
+              }`}>
+                {cloudSyncConfig.enabled && cloudSyncConfig.projectId
+                  ? (isGu ? 'સક્રિય (Connected)' : 'Connected')
+                  : (isGu ? 'બંધ (Not Configured)' : 'Not Configured')}
+              </span>
+            </div>
+
+            <div className="flex items-center gap-1.5">
+              <span className="text-stone-500">{isGu ? 'છેલ્લું સિંક:' : 'Last Synced:'}</span>
+              <span className="font-mono text-stone-700 font-semibold">
+                {cloudSyncConfig.lastSyncedAt
+                  ? new Date(cloudSyncConfig.lastSyncedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                  : (isGu ? 'ક્યારેય નહીં' : 'Never')}
+              </span>
+            </div>
+          </div>
+
+          {cloudSyncNotice && (
+            <div className={`p-2 rounded-xl text-xs font-semibold ${
+              cloudSyncNotice.isError ? 'bg-rose-50 text-rose-700 border border-rose-200' : 'bg-white text-emerald-800 border border-emerald-200'
+            }`}>
+              {cloudSyncNotice.text}
             </div>
           )}
         </div>
@@ -1318,6 +1462,141 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
             >
               {isGu ? 'સમજાઈ ગયું (Close)' : 'Got it'}
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* CLOUD SYNC & HIDDEN VAULT SETUP MODAL */}
+      {isCloudSyncModalOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in"
+          onClick={() => setIsCloudSyncModalOpen(false)}
+        >
+          <div
+            className="w-full max-w-md bg-white rounded-3xl p-5 sm:p-6 shadow-2xl border border-stone-200 text-stone-800 space-y-4 max-h-[90vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between pb-3 border-b border-stone-100">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-emerald-100 text-emerald-800 flex items-center justify-center">
+                  <Cloud className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-stone-900">
+                    {isGu ? 'ફ્રી ક્લાઉડ સિંક સેટઅપ (Firebase)' : 'Free Cloud Sync Setup'}
+                  </h3>
+                  <p className="text-[11px] text-stone-500">
+                    {isGu ? 'ઝીરો-નોલેજ AES-256 મિલિટરી એન્ક્રિપ્શન' : 'Zero-Knowledge AES-256 Encrypted'}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsCloudSyncModalOpen(false)}
+                className="p-1 text-stone-400 hover:text-stone-700 rounded-lg cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Enable/Disable Toggle */}
+            <div className="flex items-center justify-between p-3 rounded-2xl bg-stone-50 border border-stone-200">
+              <div>
+                <span className="text-xs font-bold text-stone-800 block">
+                  {isGu ? 'ક્લાઉડ ઓટો-સિંક સક્રિય કરો' : 'Enable Cloud Sync'}
+                </span>
+                <span className="text-[10px] text-stone-500">
+                  {isGu ? 'નવો વ્યવહાર ઉમેરતા જ ક્લાઉડમાં ઓટો-સેવ' : 'Auto-syncs encrypted vault in background'}
+                </span>
+              </div>
+              <input
+                type="checkbox"
+                checked={tempEnabled}
+                onChange={(e) => setTempEnabled(e.target.checked)}
+                className="w-5 h-5 text-emerald-600 rounded border-stone-300 focus:ring-emerald-500 cursor-pointer"
+              />
+            </div>
+
+            {/* Firebase Project ID Input */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold text-stone-700 block">
+                {isGu ? 'Firebase Project ID (પ્રોજેક્ટ આઈડી):' : 'Firebase Project ID:'}
+              </label>
+              <input
+                type="text"
+                placeholder="દા.ત. my-smart-expense-app"
+                value={tempProjectId}
+                onChange={(e) => setTempProjectId(e.target.value)}
+                className="w-full px-3.5 py-2.5 rounded-xl border border-stone-200 bg-stone-50 text-xs font-mono outline-none focus:border-emerald-500"
+              />
+              <span className="text-[10px] text-stone-500 block">
+                {isGu
+                  ? 'ફ્રી Firebase Spark plan માંથી મળેલો Project ID અહીં દાખલ કરો.'
+                  : 'Enter your project ID from Firebase Console (Spark Free Tier).'}
+              </span>
+            </div>
+
+            {/* Step-by-Step Setup Guide Accordion */}
+            <div className="p-3.5 bg-emerald-50/70 border border-emerald-200 rounded-2xl space-y-2 text-xs">
+              <div className="font-bold text-emerald-950 flex items-center gap-1.5">
+                <Info className="w-4 h-4 text-emerald-700" />
+                <span>{isGu ? 'ફ્રી ડેટાબેઝ કેવી રીતે બનાવવો? (૨ મિનિટ)' : 'How to set up free cloud db (2 mins)'}</span>
+              </div>
+
+              <ol className="list-decimal list-inside space-y-1.5 text-stone-700 text-[11px] leading-relaxed">
+                <li>
+                  {isGu ? (
+                    <>બ્રાઉઝરમાં <strong>console.firebase.google.com</strong> ખોલો અને ગૂગલ એકાઉન્ટથી લૉગિન કરો.</>
+                  ) : (
+                    <>Go to <strong>console.firebase.google.com</strong> and sign in.</>
+                  )}
+                </li>
+                <li>
+                  {isGu ? (
+                    <><strong>"Create a project"</strong> પર ક્લિક કરી કોઈપણ નામ આપો (દા.ત. <code>my-expense-vault</code>).</>
+                  ) : (
+                    <>Click <strong>"Create a project"</strong> and enter any name.</>
+                  )}
+                </li>
+                <li>
+                  {isGu ? (
+                    <>ડાબી બાજુ <strong>Build &gt; Firestore Database</strong> પર ક્લિક કરી <strong>"Create Database"</strong> કરો (Start in test mode).</>
+                  ) : (
+                    <>Navigate to <strong>Build &gt; Firestore Database</strong> and click <strong>Create Database</strong>.</>
+                  )}
+                </li>
+                <li>
+                  {isGu ? (
+                    <>પ્રોજેક્ટ સેટિંગ્સમાંથી <strong>Project ID</strong> કોપી કરી ઉપરના બોક્સમાં પેસ્ટ કરો અને નીચે <strong>Save</strong> કરો!</>
+                  ) : (
+                    <>Copy your <strong>Project ID</strong> from Project Settings and paste it above!</>
+                  )}
+                </li>
+              </ol>
+
+              <div className="text-[10px] text-emerald-800 bg-white p-2 rounded-xl border border-emerald-100">
+                🔒 {isGu
+                  ? 'ગેરંટી: તમારો ડેટા તમારા 12 શબ્દોના માસ્ટર પાસફ્રેઝથી ફોનમાં જ 256-બીટ એન્ક્રિપ્ટ થઈને જશે. ક્લાઉડ સર્વર કે અન્ય કોઈ પણ તેને વાંચી શકશે નહીં!'
+                  : 'Zero-Knowledge: Encrypted on-device using your 12-word passphrase. 100% private.'}
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div className="flex gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => setIsCloudSyncModalOpen(false)}
+                className="flex-1 py-2.5 rounded-xl border border-stone-200 text-stone-700 text-xs font-bold hover:bg-stone-50 cursor-pointer"
+              >
+                {t.cancel}
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveCloudSyncSettings}
+                className="flex-1 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition shadow-xs cursor-pointer"
+              >
+                {isGu ? 'સાચવો અને કનેક્ટ કરો' : 'Save & Connect'}
+              </button>
+            </div>
           </div>
         </div>
       )}

@@ -16,6 +16,8 @@ export interface Transaction {
   needsConfirmation?: boolean;
   evidence?: string;
   evidenceSource?: 'sms' | 'notification' | 'manual';
+  evidenceImage?: string; // base64 encoded photo or receipt image
+  evidenceSender?: string; // SMS sender address (e.g. AX-HDFCBK, VM-SBIINB)
   referenceNumber?: string;
   updatedAt?: string;
 }

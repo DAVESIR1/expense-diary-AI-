@@ -1031,6 +1031,29 @@ export const ReportScreen: React.FC<ReportScreenProps> = ({
                 : 'Do you want to save this report directly to your Downloads folder or share it with other apps?'}
             </p>
 
+            {/* Prompt: Include Proof / Evidence Column */}
+            <div className="p-3 bg-stone-50 rounded-2xl border border-stone-200">
+              <label className="flex items-center justify-between cursor-pointer select-none">
+                <div className="flex items-center gap-2">
+                  <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <div>
+                    <div className="text-xs font-bold text-stone-800">
+                      {isGu ? 'રિપોર્ટમાં પુરાવો (Evidence) ઉમેરવો?' : 'Include Evidence / Proof Column?'}
+                    </div>
+                    <div className="text-[10px] text-stone-500">
+                      {isGu ? 'SMS ટેક્સ્ટ, UTR અને બેંક વિગત સાથે રિપોર્ટ બનાવો' : 'Include raw SMS snippet, UTR & Bank sender'}
+                    </div>
+                  </div>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={includeEvidence}
+                  onChange={(e) => setIncludeEvidence(e.target.checked)}
+                  className="w-4 h-4 text-emerald-600 rounded border-stone-300 focus:ring-emerald-500 cursor-pointer"
+                />
+              </label>
+            </div>
+
             <div className="space-y-2.5 pt-1">
               {/* Option 1: Save to Device */}
               <button

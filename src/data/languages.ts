@@ -132,7 +132,7 @@ export interface TranslationStrings {
 
 export const TRANSLATIONS: Record<string, Partial<TranslationStrings>> = {
   gu: {
-    appName: 'ખર્ચ ડાયરી',
+    appName: 'સ્માર્ટ ખર્ચ આવક',
     appSubtitle: 'સ્માર્ટ અને સુરક્ષિત ફાયનાન્શિયલ ડાયરી',
     income: 'આવક',
     expense: 'ખર્ચ',
@@ -231,7 +231,7 @@ export const TRANSLATIONS: Record<string, Partial<TranslationStrings>> = {
     permissionsDesc: 'SMS, નોટિફિકેશન અને એપ યુસેજ રીડ કરવાની સુવિધા',
   },
   en: {
-    appName: 'Expense Diary',
+    appName: 'smart expence income',
     appSubtitle: 'Smart & Secure Financial Diary',
     income: 'Income',
     expense: 'Expense',

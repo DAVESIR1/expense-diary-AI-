@@ -97,6 +97,7 @@ export const SmartTransactionScanModal: React.FC<SmartTransactionScanModalProps>
         vendorOrPerson: item.vendorOrPerson,
         evidence: item.evidence,
         evidenceSource: 'sms',
+        evidenceSender: item.bankOrSource,
         isAiGenerated: true,
       }));
 

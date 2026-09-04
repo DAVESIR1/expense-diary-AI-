@@ -12,7 +12,11 @@ import {
   Phone,
   Wallet,
   RefreshCw,
-  X
+  X,
+  ShieldCheck,
+  Image as ImageIcon,
+  Edit3,
+  Calendar
 } from 'lucide-react';
 import { Transaction, TransactionType, PendingAIMessage, Category, UserProfile } from '../types';
 import { TranslationStrings } from '../data/languages';
@@ -21,6 +25,7 @@ interface HomeScreenProps {
   transactions: Transaction[];
   onOpenAddModal: (type: TransactionType) => void;
   onDeleteTransaction: (id: string) => void;
+  onEditTransaction?: (tx: Transaction) => void;
   pendingAiMessages: PendingAIMessage[];
   onConfirmAiMessage: (messageId: string, customCategory?: string) => void;
   onDismissAiMessage: (messageId: string) => void;
@@ -45,6 +50,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
   currentLang = 'en',
   profile,
   onTriggerScan,
+  onEditTransaction,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedFilterType, setSelectedFilterType] = useState<'all' | 'income' | 'expense'>('all');
@@ -53,6 +59,13 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [showOfflinePrompt, setShowOfflinePrompt] = useState(false);
   const [touchStartY, setTouchStartY] = useState(0);
+  const [previewEvidenceTx, setPreviewEvidenceTx] = useState<Transaction | null>(null);
+  const [selectedTxForDetail, setSelectedTxForDetail] = useState<Transaction | null>(null);
+
+  // Time Period Filter: 'month' (default) | 'year' | 'all'
+  const [timePeriod, setTimePeriod] = useState<'month' | 'year' | 'all'>('month');
+  const [filterMonth, setFilterMonth] = useState<string>(new Date().toISOString().substring(0, 7));
+  const [filterYear, setFilterYear] = useState<string>(new Date().getFullYear().toString());
 
   const isGu = currentLang === 'gu';
 
@@ -76,19 +89,30 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
     }
   };
 
-  // Calculate totals
-  const totalIncome = transactions
+  // Transactions filtered by selected time period
+  const periodTransactions = transactions.filter((tx) => {
+    if (timePeriod === 'month') {
+      return tx.date.startsWith(filterMonth);
+    }
+    if (timePeriod === 'year') {
+      return tx.date.startsWith(filterYear);
+    }
+    return true; // 'all'
+  });
+
+  // Calculate totals strictly based on selected period
+  const totalIncome = periodTransactions
     .filter((tx) => tx.type === 'income')
     .reduce((sum, item) => sum + item.amount, 0);
 
-  const totalExpense = transactions
+  const totalExpense = periodTransactions
     .filter((tx) => tx.type === 'expense')
     .reduce((sum, item) => sum + item.amount, 0);
 
   const netBalance = totalIncome - totalExpense;
 
-  // Filter transactions
-  const filteredTransactions = transactions.filter((item) => {
+  // Filter transactions for list (combines period + search + income/expense filter)
+  const filteredTransactions = periodTransactions.filter((item) => {
     if (selectedFilterType !== 'all' && item.type !== selectedFilterType) {
       return false;
     }
@@ -287,6 +311,95 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
         </div>
       )}
 
+      {/* PERIOD FILTER BAR (Month, Year, All) */}
+      <div
+        id="home-period-filter-bar"
+        className="bg-white rounded-2xl p-3 sm:p-3.5 border border-stone-200 shadow-2xs flex flex-wrap items-center justify-between gap-2.5"
+      >
+        <div className="flex items-center gap-1.5 bg-stone-100/80 p-1 rounded-xl">
+          <button
+            type="button"
+            onClick={() => setTimePeriod('month')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
+              timePeriod === 'month'
+                ? 'bg-white text-stone-900 shadow-2xs'
+                : 'text-stone-500 hover:text-stone-800'
+            }`}
+          >
+            {isGu ? 'આ મહિનો' : 'This Month'}
+          </button>
+          <button
+            type="button"
+            onClick={() => setTimePeriod('year')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
+              timePeriod === 'year'
+                ? 'bg-white text-stone-900 shadow-2xs'
+                : 'text-stone-500 hover:text-stone-800'
+            }`}
+          >
+            {isGu ? 'આ વર્ષ' : 'This Year'}
+          </button>
+          <button
+            type="button"
+            onClick={() => setTimePeriod('all')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
+              timePeriod === 'all'
+                ? 'bg-white text-stone-900 shadow-2xs'
+                : 'text-stone-500 hover:text-stone-800'
+            }`}
+          >
+            {isGu ? 'બધા વ્યવહાર' : 'All'}
+          </button>
+        </div>
+
+        {/* Dynamic Selector or Net Balance indicator */}
+        <div className="flex items-center gap-2">
+          {timePeriod === 'month' && (
+            <div className="flex items-center gap-1 bg-stone-50 border border-stone-200 px-2 py-1 rounded-xl text-xs font-semibold text-stone-700">
+              <Calendar className="w-3.5 h-3.5 text-stone-400" />
+              <input
+                type="month"
+                value={filterMonth}
+                onChange={(e) => {
+                  if (e.target.value) setFilterMonth(e.target.value);
+                }}
+                className="bg-transparent border-none outline-none text-xs text-stone-800 font-medium cursor-pointer"
+              />
+            </div>
+          )}
+
+          {timePeriod === 'year' && (
+            <div className="flex items-center gap-1 bg-stone-50 border border-stone-200 px-2.5 py-1 rounded-xl text-xs font-semibold text-stone-700">
+              <Calendar className="w-3.5 h-3.5 text-stone-400" />
+              <select
+                value={filterYear}
+                onChange={(e) => setFilterYear(e.target.value)}
+                className="bg-transparent border-none outline-none text-xs text-stone-800 font-medium cursor-pointer"
+              >
+                {[0, 1, 2, 3, 4].map((offset) => {
+                  const y = (new Date().getFullYear() - offset).toString();
+                  return (
+                    <option key={y} value={y}>
+                      {y}
+                    </option>
+                  );
+                })}
+              </select>
+            </div>
+          )}
+
+          {/* Net Balance badge for selected period */}
+          <div className={`px-2.5 py-1 rounded-xl text-xs font-bold font-mono border ${
+            netBalance >= 0 
+              ? 'bg-emerald-50 text-emerald-800 border-emerald-200' 
+              : 'bg-rose-50 text-rose-800 border-rose-200'
+          }`}>
+            <span>{isGu ? 'બચત: ' : 'Net: '}</span>
+            <span>{currency}{netBalance.toLocaleString()}</span>
+          </div>
+        </div>
+      </div>
+
       {/* TOP CARDS: Minimal Income & Expense with Inline Quick Add Buttons */}
       <section id="income-expense-cards-grid" className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">
         {/* Income Card (Soft Green) */}
@@ -321,7 +434,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
           <div className="flex items-center gap-2 text-[#40916C] text-xs font-semibold mt-3">
             <ArrowDownLeft className="w-4 h-4 stroke-[2.5]" />
             <span>
-              {transactions.filter((x) => x.type === 'income').length} {t.income}
+              {periodTransactions.filter((x) => x.type === 'income').length} {t.income}
             </span>
           </div>
         </div>
@@ -358,7 +471,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
           <div className="flex items-center gap-2 text-[#C53030] text-xs font-semibold mt-3">
             <ArrowUpRight className="w-4 h-4 stroke-[2.5]" />
             <span>
-              {transactions.filter((x) => x.type === 'expense').length} {t.expense}
+              {periodTransactions.filter((x) => x.type === 'expense').length} {t.expense}
             </span>
           </div>
         </div>
@@ -494,7 +607,8 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                 <div
                   key={item.id}
                   id={`transaction-item-${item.id}`}
-                  className="group relative flex items-center justify-between p-3.5 sm:p-4 rounded-2xl bg-white border border-stone-200 hover:border-stone-300 hover:shadow-xs transition-all duration-150"
+                  onClick={() => setSelectedTxForDetail(item)}
+                  className="group relative flex items-center justify-between p-3.5 sm:p-4 rounded-2xl bg-white border border-stone-200 hover:border-emerald-300 hover:shadow-xs transition-all duration-150 cursor-pointer active:scale-[0.99]"
                 >
                   <div className="flex items-center gap-3.5 min-w-0">
                     {/* Icon badge */}
@@ -522,6 +636,15 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                             AI
                           </span>
                         )}
+                        {(item.evidence || item.evidenceImage || item.referenceNumber) && (
+                          <span
+                            className="inline-flex items-center gap-1 text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 px-1.5 py-0.5 rounded"
+                            title={isGu ? 'પુરાવો / રસીદ ઉપલબ્ધ છે' : 'Proof / Evidence Available'}
+                          >
+                            <ShieldCheck className="w-3 h-3 text-emerald-600" />
+                            <span>{item.evidenceImage ? (isGu ? 'રસીદ' : 'Receipt') : (isGu ? 'પુરાવો' : 'Proof')}</span>
+                          </span>
+                        )}
                       </div>
 
                       <div className="flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-[11px] text-stone-400 mt-0.5 font-medium">
@@ -547,8 +670,8 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                     </div>
                   </div>
 
-                  {/* Right side: Amount and Delete */}
-                  <div className="flex items-center gap-3 shrink-0 pl-2">
+                  {/* Right side: Amount and Action Buttons */}
+                  <div className="flex items-center gap-2 sm:gap-3 shrink-0 pl-2">
                     <span
                       className={`text-sm sm:text-base font-bold font-mono ${
                         isInc ? 'text-[#1B4332]' : 'text-[#742A2A]'
@@ -557,12 +680,30 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                       {isInc ? '+' : '-'}{currency}{item.amount.toLocaleString()}
                     </span>
 
+                    {/* Edit Button */}
                     <button
-                      onClick={() => onDeleteTransaction(item.id)}
-                      title={t.delete}
-                      className="opacity-0 group-hover:opacity-100 sm:transition-opacity p-1.5 text-stone-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg cursor-pointer"
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onEditTransaction?.(item);
+                      }}
+                      title={isGu ? 'ફેરફાર કરો' : 'Edit'}
+                      className="p-1.5 text-stone-400 hover:text-emerald-700 hover:bg-emerald-50 rounded-lg cursor-pointer transition"
                     >
-                      <Trash2 className="w-4 h-4" />
+                      <Edit3 className="w-3.5 h-3.5" />
+                    </button>
+
+                    {/* Delete Button */}
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onDeleteTransaction(item.id);
+                      }}
+                      title={t.delete}
+                      className="p-1.5 text-stone-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg cursor-pointer transition"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
                     </button>
                   </div>
                 </div>
@@ -571,6 +712,204 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
           </div>
         )}
       </section>
+
+      {/* TRANSACTION DETAILS & EVIDENCE MODAL (On Tap) */}
+      {selectedTxForDetail && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-xs animate-in fade-in"
+          onClick={() => setSelectedTxForDetail(null)}
+        >
+          <div
+            className="w-full max-w-lg bg-white rounded-3xl p-5 sm:p-6 shadow-2xl border border-stone-200 text-stone-800 space-y-4 max-h-[90vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="flex items-center justify-between pb-3 border-b border-stone-100">
+              <div className="flex items-center gap-2.5">
+                <div
+                  className={`w-10 h-10 rounded-2xl flex items-center justify-center ${
+                    selectedTxForDetail.type === 'income'
+                      ? 'bg-emerald-100 text-emerald-800'
+                      : 'bg-rose-100 text-rose-800'
+                  }`}
+                >
+                  {selectedTxForDetail.type === 'income' ? (
+                    <ArrowDownLeft className="w-5 h-5 stroke-[2.5]" />
+                  ) : (
+                    <ArrowUpRight className="w-5 h-5 stroke-[2.5]" />
+                  )}
+                </div>
+                <div>
+                  <h3 className="text-sm sm:text-base font-bold text-stone-900 truncate">
+                    {selectedTxForDetail.title}
+                  </h3>
+                  <div className="flex items-center gap-2 text-xs text-stone-500 font-medium">
+                    <span className="font-bold text-stone-700">{selectedTxForDetail.category}</span>
+                    <span>•</span>
+                    <span>{selectedTxForDetail.date}</span>
+                    {selectedTxForDetail.time && <span>{selectedTxForDetail.time}</span>}
+                  </div>
+                </div>
+              </div>
+
+              <button
+                onClick={() => setSelectedTxForDetail(null)}
+                className="p-1.5 text-stone-400 hover:text-stone-700 rounded-lg cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Amount Banner & Type */}
+            <div className={`p-4 rounded-2xl border flex items-center justify-between ${
+              selectedTxForDetail.type === 'income'
+                ? 'bg-emerald-50/70 border-emerald-200 text-emerald-950'
+                : 'bg-rose-50/70 border-rose-200 text-rose-950'
+            }`}>
+              <div>
+                <span className="text-[11px] font-bold uppercase tracking-wider block opacity-75">
+                  {selectedTxForDetail.type === 'income' ? (isGu ? 'જમા થયેલી રકમ (આવક)' : 'Received Amount (Income)') : (isGu ? 'ચૂકવેલી રકમ (જાવક/ખર્ચ)' : 'Spent Amount (Expense)')}
+                </span>
+                <span className="text-2xl sm:text-3xl font-extrabold font-mono tracking-tight">
+                  {selectedTxForDetail.type === 'income' ? '+' : '-'}{currency}{selectedTxForDetail.amount.toLocaleString()}
+                </span>
+              </div>
+
+              <span className={`px-3 py-1 rounded-xl text-xs font-bold ${
+                selectedTxForDetail.type === 'income' ? 'bg-emerald-600 text-white' : 'bg-rose-600 text-white'
+              }`}>
+                {selectedTxForDetail.type === 'income' ? t.income : t.expense}
+              </span>
+            </div>
+
+            {/* Details Grid */}
+            <div className="grid grid-cols-2 gap-2.5 text-xs">
+              <div className="bg-stone-50 p-3 rounded-xl border border-stone-200">
+                <span className="text-[10px] font-bold text-stone-400 uppercase tracking-wider block mb-0.5">
+                  {t.paymentMode}
+                </span>
+                <span className="font-bold text-stone-800">
+                  {selectedTxForDetail.paymentMode || 'UPI'}
+                </span>
+              </div>
+
+              <div className="bg-stone-50 p-3 rounded-xl border border-stone-200">
+                <span className="text-[10px] font-bold text-stone-400 uppercase tracking-wider block mb-0.5">
+                  {isGu ? 'વેન્ડર / વ્યક્તિ' : 'Vendor / Person'}
+                </span>
+                <span className="font-bold text-stone-800 truncate block">
+                  {selectedTxForDetail.vendorOrPerson || (isGu ? 'સામાન્ય' : 'General')}
+                </span>
+              </div>
+            </div>
+
+            {/* Notes */}
+            {selectedTxForDetail.notes && (
+              <div className="bg-stone-50 p-3 rounded-xl border border-stone-200">
+                <span className="text-[10px] font-bold text-stone-400 uppercase tracking-wider block mb-0.5">
+                  {t.notes}
+                </span>
+                <p className="text-xs text-stone-700 whitespace-pre-wrap">
+                  {selectedTxForDetail.notes}
+                </p>
+              </div>
+            )}
+
+            {/* Banking / SMS Evidence Section */}
+            {(selectedTxForDetail.evidence || selectedTxForDetail.evidenceSender || selectedTxForDetail.referenceNumber) && (
+              <div className="p-3.5 bg-emerald-50/70 border border-emerald-200 rounded-2xl space-y-2">
+                <div className="flex items-center gap-1.5 text-emerald-900 font-bold text-xs">
+                  <ShieldCheck className="w-4 h-4 text-emerald-600" />
+                  <span>{isGu ? 'ઓરિજિનલ બેંકિંગ પુરાવો (Banking Proof / SMS)' : 'Verified Banking Evidence'}</span>
+                </div>
+
+                {selectedTxForDetail.evidenceSender && (
+                  <div className="text-xs text-emerald-900 flex items-center gap-1.5">
+                    <span className="font-semibold">{isGu ? 'મોકલનાર બેંક:' : 'Sender:'}</span>
+                    <span className="bg-white px-2 py-0.5 rounded-lg border border-emerald-200 font-mono font-bold text-[11px]">
+                      {selectedTxForDetail.evidenceSender}
+                    </span>
+                  </div>
+                )}
+
+                {selectedTxForDetail.referenceNumber && (
+                  <div className="text-xs text-emerald-900 flex items-center gap-1.5">
+                    <span className="font-semibold">{isGu ? 'રેફરન્સ / UTR:' : 'Ref/UTR:'}</span>
+                    <span className="bg-white px-2 py-0.5 rounded-lg border border-emerald-200 font-mono font-bold text-[11px]">
+                      {selectedTxForDetail.referenceNumber}
+                    </span>
+                  </div>
+                )}
+
+                {selectedTxForDetail.evidence && (
+                  <div className="pt-1">
+                    <span className="text-[10px] font-bold text-stone-500 uppercase tracking-wider block mb-1">
+                      {isGu ? 'ઓરિજિનલ SMS ટેક્સ્ટ:' : 'Raw SMS Text:'}
+                    </span>
+                    <p className="text-[11px] font-mono text-stone-700 bg-white p-2.5 rounded-xl border border-emerald-100 whitespace-pre-wrap break-words leading-relaxed">
+                      {selectedTxForDetail.evidence}
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Receipt Image / Screenshot */}
+            {selectedTxForDetail.evidenceImage && (
+              <div className="space-y-1.5">
+                <span className="text-[10px] font-bold text-stone-500 uppercase tracking-wider block">
+                  {isGu ? 'જોડેલી રસીદ / સ્ક્રીનશોટ પુરાવો' : 'Attached Receipt / Screenshot Proof'}
+                </span>
+                <div className="rounded-2xl overflow-hidden border border-stone-200 bg-stone-100 flex items-center justify-center max-h-72">
+                  <img
+                    src={selectedTxForDetail.evidenceImage}
+                    alt="Receipt Proof"
+                    className="w-full h-auto max-h-72 object-contain"
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Action Buttons: Edit, Delete, Close */}
+            <div className="flex gap-2 pt-2 border-t border-stone-100">
+              <button
+                type="button"
+                onClick={() => {
+                  const tx = selectedTxForDetail;
+                  setSelectedTxForDetail(null);
+                  onEditTransaction?.(tx);
+                }}
+                className="flex-1 py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-xs transition flex items-center justify-center gap-1.5 cursor-pointer"
+              >
+                <Edit3 className="w-4 h-4" />
+                <span>{isGu ? 'ફેરફાર કરો (Edit)' : 'Edit Transaction'}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  const id = selectedTxForDetail.id;
+                  setSelectedTxForDetail(null);
+                  onDeleteTransaction(id);
+                }}
+                className="py-3 px-4 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-bold text-xs transition flex items-center justify-center gap-1 cursor-pointer"
+                title={t.delete}
+              >
+                <Trash2 className="w-4 h-4" />
+                <span>{t.delete}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setSelectedTxForDetail(null)}
+                className="py-3 px-4 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-700 font-bold text-xs transition cursor-pointer"
+              >
+                {isGu ? 'બંધ કરો' : 'Close'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 

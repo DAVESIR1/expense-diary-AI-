@@ -88,6 +88,19 @@ export const VaultStorage = {
       } catch (e) {
         console.warn('[VaultStorage] Failed to save persistent native vault:', e);
       }
+
+      // Background Zero-Knowledge Cloud Backup (if enabled)
+      try {
+        const { CloudSyncService } = await import('./cloudSync');
+        const cloudConfig = CloudSyncService.getConfig();
+        if (cloudConfig.enabled && cloudConfig.autoSync && vault.savedPassphraseWords && vault.savedPassphraseWords.length >= 12) {
+          CloudSyncService.uploadVaultToCloud(vault, vault.savedPassphraseWords).catch(err => {
+            console.warn('[VaultStorage] Background cloud sync deferred:', err);
+          });
+        }
+      } catch {
+        // ignore background sync errors
+      }
     }, 300);
   },
 

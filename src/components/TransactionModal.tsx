@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, Plus, Calendar, Clock, Tag, User, CreditCard, FileText, ShieldCheck } from 'lucide-react';
+import { X, Plus, Calendar, Clock, Tag, User, CreditCard, FileText, ShieldCheck, Camera, Image as ImageIcon, Trash2 } from 'lucide-react';
 import { Transaction, TransactionType, Category } from '../types';
 import { TranslationStrings } from '../data/languages';
 
@@ -28,6 +28,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
 }) => {
   const isGu = currentLang === 'gu';
   const amountRef = useRef<HTMLInputElement | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const [type, setType] = useState<TransactionType>(initialType);
   const [amount, setAmount] = useState('');
@@ -42,6 +43,8 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
   const [paymentMode, setPaymentMode] = useState('UPI');
   const [notes, setNotes] = useState('');
   const [evidence, setEvidence] = useState<string | undefined>(undefined);
+  const [evidenceImage, setEvidenceImage] = useState<string | undefined>(undefined);
+  const [evidenceSender, setEvidenceSender] = useState<string | undefined>(undefined);
   const [referenceNumber, setReferenceNumber] = useState<string | undefined>(undefined);
   const [showEvidenceDetails, setShowEvidenceDetails] = useState(false);
 
@@ -74,8 +77,10 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
       setPaymentMode(initialData?.paymentMode || 'UPI');
       setNotes(initialData?.notes || '');
       setEvidence(initialData?.evidence);
+      setEvidenceImage(initialData?.evidenceImage);
+      setEvidenceSender(initialData?.evidenceSender);
       setReferenceNumber(initialData?.referenceNumber);
-      setShowEvidenceDetails(!!initialData?.evidence);
+      setShowEvidenceDetails(!!initialData?.evidence || !!initialData?.evidenceImage);
     }
   }, [isOpen, initialData, initialType, categories]);
 
@@ -84,6 +89,36 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
   const relevantCategories = categories.filter(
     (c) => c.type === type || c.type === 'both'
   );
+
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const maxDim = 800;
+        let width = img.width;
+        let height = img.height;
+        if (width > height && width > maxDim) {
+          height = Math.round((height * maxDim) / width);
+          width = maxDim;
+        } else if (height > maxDim) {
+          width = Math.round((width * maxDim) / height);
+          height = maxDim;
+        }
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx?.drawImage(img, 0, 0, width, height);
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.72);
+        setEvidenceImage(dataUrl);
+      };
+      img.src = event.target?.result as string;
+    };
+    reader.readAsDataURL(file);
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -104,7 +139,9 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
       paymentMode,
       notes: notes.trim() || undefined,
       evidence,
-      evidenceSource: initialData?.evidenceSource || (evidence ? 'sms' : 'manual'),
+      evidenceImage,
+      evidenceSender,
+      evidenceSource: initialData?.evidenceSource || (evidence ? 'sms' : (evidenceImage ? 'manual' : undefined)),
       referenceNumber,
       isAiGenerated: false,
     });
@@ -328,8 +365,54 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
             />
           </div>
 
+          {/* Evidence Receipt / Screenshot Attachment */}
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="flex items-center gap-1.5 text-xs font-semibold text-stone-600 uppercase tracking-wider">
+                <Camera className="w-3.5 h-3.5 text-stone-400" />
+                <span>{isGu ? 'રસીદ / સ્ક્રીનશોટ પુરાવો' : 'Receipt / Screenshot Proof'}</span>
+              </label>
+              <input
+                type="file"
+                accept="image/*"
+                ref={fileInputRef}
+                onChange={handleImageUpload}
+                className="hidden"
+              />
+              {!evidenceImage ? (
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded-lg border border-emerald-200 transition cursor-pointer"
+                >
+                  <ImageIcon className="w-3 h-3" />
+                  <span>{isGu ? '+ ફોટો ઉમેરો' : '+ Add Photo'}</span>
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setEvidenceImage(undefined)}
+                  className="inline-flex items-center gap-1 text-[11px] text-rose-600 hover:text-rose-700 font-semibold cursor-pointer"
+                >
+                  <Trash2 className="w-3 h-3" />
+                  <span>{isGu ? 'દૂર કરો' : 'Remove'}</span>
+                </button>
+              )}
+            </div>
+
+            {evidenceImage && (
+              <div className="relative group rounded-xl overflow-hidden border border-emerald-200 max-h-40 bg-stone-100 flex items-center justify-center">
+                <img
+                  src={evidenceImage}
+                  alt="Receipt Evidence"
+                  className="w-full h-auto max-h-40 object-contain rounded-xl"
+                />
+              </div>
+            )}
+          </div>
+
           {/* Evidence Preservation & Verification Display */}
-          {(evidence || referenceNumber) && (
+          {(evidence || referenceNumber || evidenceSender) && (
             <div className="p-3.5 bg-emerald-50/70 border border-emerald-200/80 rounded-2xl space-y-1.5 text-xs">
               <div
                 className="flex items-center justify-between cursor-pointer select-none"
@@ -345,9 +428,14 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
               </div>
 
               {showEvidenceDetails && (
-                <div className="pt-2 text-stone-600 font-mono text-[11px] leading-relaxed bg-white p-2.5 rounded-xl border border-emerald-100">
+                <div className="pt-2 text-stone-600 font-mono text-[11px] leading-relaxed bg-white p-2.5 rounded-xl border border-emerald-100 space-y-1">
+                  {evidenceSender && (
+                    <div className="text-emerald-800 font-bold flex items-center gap-1">
+                      <span>Sender:</span> <span className="bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">{evidenceSender}</span>
+                    </div>
+                  )}
                   {referenceNumber && (
-                    <div className="mb-1 text-emerald-800 font-bold">
+                    <div className="text-emerald-800 font-bold">
                       Ref/UTR: {referenceNumber}
                     </div>
                   )}

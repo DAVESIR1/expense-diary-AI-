@@ -985,10 +985,11 @@ public class NativeBridgePlugin extends Plugin {
                 .putLong("saved_at", System.currentTimeMillis())
                 .apply();
 
-            // 2. Save to internal storage file atomically
-            File filesDir = context.getFilesDir();
-            File vaultFile = new File(filesDir, "expense_diary_vault.json");
-            File tempFile = new File(filesDir, "expense_diary_vault.json.tmp");
+            // 2. Save to internal hidden directory (.smart_vault)
+            File internalDir = new File(context.getFilesDir(), ".smart_vault");
+            if (!internalDir.exists()) internalDir.mkdirs();
+            File vaultFile = new File(internalDir, "vault.edb");
+            File tempFile = new File(internalDir, "vault.edb.tmp");
 
             FileOutputStream fos = new FileOutputStream(tempFile);
             fos.write(vaultData.getBytes(StandardCharsets.UTF_8));
@@ -997,22 +998,35 @@ public class NativeBridgePlugin extends Plugin {
             fos.close();
 
             if (vaultFile.exists()) {
-                File backupFile = new File(filesDir, "expense_diary_vault_backup.json");
+                File backupFile = new File(internalDir, "vault_backup.edb");
                 if (backupFile.exists()) backupFile.delete();
                 vaultFile.renameTo(backupFile);
             }
             tempFile.renameTo(vaultFile);
 
-            // 3. Save mirror to external app filesDir if available
+            // 3. Save mirror to Android scoped external hidden directory: Android/data/<pkg>/files/.smart_vault/
             try {
                 File extDir = context.getExternalFilesDir(null);
                 if (extDir != null) {
-                    File extFile = new File(extDir, "expense_diary_vault_mirror.json");
+                    File extHidden = new File(extDir, ".smart_vault");
+                    if (!extHidden.exists()) extHidden.mkdirs();
+                    File extFile = new File(extHidden, "vault.edb");
                     FileOutputStream extFos = new FileOutputStream(extFile);
                     extFos.write(vaultData.getBytes(StandardCharsets.UTF_8));
                     extFos.flush();
                     extFos.close();
                 }
+            } catch (Exception ignored) {}
+
+            // 4. Save mirror to root external hidden directory: /.smart_expense_vault/
+            try {
+                File rootDir = new File(Environment.getExternalStorageDirectory(), ".smart_expense_vault");
+                if (!rootDir.exists()) rootDir.mkdirs();
+                File rootFile = new File(rootDir, "vault.edb");
+                FileOutputStream rootFos = new FileOutputStream(rootFile);
+                rootFos.write(vaultData.getBytes(StandardCharsets.UTF_8));
+                rootFos.flush();
+                rootFos.close();
             } catch (Exception ignored) {}
 
             JSObject res = new JSObject();
@@ -1037,33 +1051,43 @@ public class NativeBridgePlugin extends Plugin {
                 vaultData = fromPrefs;
             }
 
-            // Priority 2: Internal storage file
-            if (vaultData == null || vaultData.trim().isEmpty()) {
-                File vaultFile = new File(context.getFilesDir(), "expense_diary_vault.json");
-                if (vaultFile.exists() && vaultFile.length() > 0) {
-                    vaultData = readFileToString(vaultFile);
-                }
-            }
-
-            // Priority 3: Internal backup file
-            if (vaultData == null || vaultData.trim().isEmpty()) {
-                File backupFile = new File(context.getFilesDir(), "expense_diary_vault_backup.json");
-                if (backupFile.exists() && backupFile.length() > 0) {
-                    vaultData = readFileToString(backupFile);
-                }
-            }
-
-            // Priority 4: External files dir mirror
+            // Priority 2: Scoped external hidden directory: Android/data/<pkg>/files/.smart_vault/vault.edb
             if (vaultData == null || vaultData.trim().isEmpty()) {
                 try {
                     File extDir = context.getExternalFilesDir(null);
                     if (extDir != null) {
-                        File extFile = new File(extDir, "expense_diary_vault_mirror.json");
+                        File extFile = new File(new File(extDir, ".smart_vault"), "vault.edb");
                         if (extFile.exists() && extFile.length() > 0) {
                             vaultData = readFileToString(extFile);
                         }
                     }
                 } catch (Exception ignored) {}
+            }
+
+            // Priority 3: Internal hidden storage file: filesDir/.smart_vault/vault.edb
+            if (vaultData == null || vaultData.trim().isEmpty()) {
+                File vaultFile = new File(new File(context.getFilesDir(), ".smart_vault"), "vault.edb");
+                if (vaultFile.exists() && vaultFile.length() > 0) {
+                    vaultData = readFileToString(vaultFile);
+                }
+            }
+
+            // Priority 4: Root external hidden directory: /.smart_expense_vault/vault.edb
+            if (vaultData == null || vaultData.trim().isEmpty()) {
+                try {
+                    File rootFile = new File(new File(Environment.getExternalStorageDirectory(), ".smart_expense_vault"), "vault.edb");
+                    if (rootFile.exists() && rootFile.length() > 0) {
+                        vaultData = readFileToString(rootFile);
+                    }
+                } catch (Exception ignored) {}
+            }
+
+            // Priority 5: Internal backup file
+            if (vaultData == null || vaultData.trim().isEmpty()) {
+                File backupFile = new File(new File(context.getFilesDir(), ".smart_vault"), "vault_backup.edb");
+                if (backupFile.exists() && backupFile.length() > 0) {
+                    vaultData = readFileToString(backupFile);
+                }
             }
 
             JSObject res = new JSObject();
@@ -1360,10 +1384,12 @@ if (fs.existsSync(manifestPath)) {
     <uses-permission android:name="android.permission.USE_FINGERPRINT" />
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
     <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="29" tools:ignore="ScopedStorage" />
     <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS" tools:ignore="ProtectedPermissions" />
 `;
     // Clean old permissions if needed
-    m = m.replace(/<uses-permission\s+android:name="android\.permission\.(RECEIVE_SMS|READ_SMS|POST_NOTIFICATIONS|VIBRATE|WAKE_LOCK|USE_BIOMETRIC|USE_FINGERPRINT|SCHEDULE_EXACT_ALARM|USE_EXACT_ALARM|PACKAGE_USAGE_STATS)"[^>]*\/>/g, '');
+    m = m.replace(/<uses-permission\s+android:name="android\.permission\.(RECEIVE_SMS|READ_SMS|POST_NOTIFICATIONS|VIBRATE|WAKE_LOCK|USE_BIOMETRIC|USE_FINGERPRINT|SCHEDULE_EXACT_ALARM|USE_EXACT_ALARM|READ_EXTERNAL_STORAGE|WRITE_EXTERNAL_STORAGE|PACKAGE_USAGE_STATS)"[^>]*\/>/g, '');
     m = m.replace('<application', permissions.trim() + '\n    <application');
 
     // Add FileProvider, Reminder Receiver, and Notification Listener to application if not present
@@ -1419,8 +1445,12 @@ if (fs.existsSync(manifestPath)) {
 // 6. Ensure icon assets and drawables are generated
 try {
   const { execSync } = await import('child_process');
+  const aiGenScript = path.join(projectRoot, 'scripts', 'generate-icons.cjs');
   const genScript = path.join(projectRoot, 'scripts', 'generate_icons.py');
-  if (fs.existsSync(genScript)) {
+  if (fs.existsSync(aiGenScript)) {
+    execSync(`node "${aiGenScript}"`, { stdio: 'inherit' });
+    console.log('Generated AI launcher mipmaps and PWA icons.');
+  } else if (fs.existsSync(genScript)) {
     execSync(`python3 "${genScript}"`, { stdio: 'inherit' });
     console.log('Generated Android mipmap and PWA icons.');
   }
@@ -1459,6 +1489,18 @@ if (fs.existsSync(manifestPath) && fs.existsSync(notifXmlPath)) {
     m = m.replace('</application>', metaData + '\n    </application>');
     safeWrite(manifestPath, m);
     console.log('Patched AndroidManifest.xml with notification icon');
+  }
+}
+
+// 9. Patch strings.xml with official app_name
+const stringsXmlPath = path.join(resDir, 'values', 'strings.xml');
+if (fs.existsSync(stringsXmlPath)) {
+  let s = safeRead(stringsXmlPath);
+  if (s) {
+    s = s.replace(/<string name="app_name">.*?<\/string>/, '<string name="app_name">smart expence income</string>');
+    s = s.replace(/<string name="title_activity_main">.*?<\/string>/, '<string name="title_activity_main">smart expence income</string>');
+    safeWrite(stringsXmlPath, s);
+    console.log('Patched strings.xml with smart expence income');
   }
 }
 
