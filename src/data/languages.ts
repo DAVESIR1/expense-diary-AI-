@@ -58,8 +58,6 @@ export interface TranslationStrings {
   edit: string;
   exportPdf: string;
   exportExcel: string;
-  exportText: string;
-  exportImage: string;
   allCategories: string;
   recentTransactions: string;
   noTransactions: string;
@@ -99,6 +97,16 @@ export interface TranslationStrings {
   cardLayout: string;
   reminderTitle: string;
   reminderBody: string;
+  borrowed: string;
+  lent: string;
+  borrowedMoney: string;
+  lentMoney: string;
+  personName: string;
+  contactNumber: string;
+  dueDate: string;
+  pending: string;
+  settled: string;
+  markSettled: string;
 }
 
 export const TRANSLATIONS: Record<string, Partial<TranslationStrings>> = {
@@ -131,8 +139,6 @@ export const TRANSLATIONS: Record<string, Partial<TranslationStrings>> = {
     edit: 'સુધારો',
     exportPdf: 'PDF રિપોર્ટ',
     exportExcel: 'Excel / CSV',
-    exportText: 'ટેક્સ્ટ (.txt)',
-    exportImage: 'ઇમેજ ફોર્મેટ',
     allCategories: 'બધી કેટેગરીઝ',
     recentTransactions: 'તાજેતરના વ્યવહારો',
     noTransactions: 'હજી સુધી કોઈ વ્યવહાર નોંધાયેલ નથી.',
@@ -171,6 +177,16 @@ export const TRANSLATIONS: Record<string, Partial<TranslationStrings>> = {
     cardLayout: 'મિનિમલ કાર્ડ',
     reminderTitle: 'દૈનિક ખર્ચ નોંધણી સમય',
     reminderBody: 'આજના બાકી રહેલા ખર્ચાઓ અને વ્યવહારો નોંધવાનું ભૂલતા નહીં.',
+    borrowed: 'ઉછીના લીધેલા',
+    lent: 'ઉછીના આપેલા',
+    borrowedMoney: 'ઉછીના લીધેલા પૈસા',
+    lentMoney: 'ઉછીના આપેલા પૈસા',
+    personName: 'વ્યક્તિનું નામ',
+    contactNumber: 'સંપર્ક નંબર',
+    dueDate: 'ચૂકવણી તારીખ',
+    pending: 'બાકી',
+    settled: 'ચૂકતે',
+    markSettled: 'ચૂકતે કરો',
   },
   en: {
     appName: 'Expense Diary',
@@ -201,8 +217,6 @@ export const TRANSLATIONS: Record<string, Partial<TranslationStrings>> = {
     edit: 'Edit',
     exportPdf: 'Export PDF',
     exportExcel: 'Export Excel/CSV',
-    exportText: 'Export Text (.txt)',
-    exportImage: 'Export Image',
     allCategories: 'All Categories',
     recentTransactions: 'Recent Transactions',
     noTransactions: 'No transactions recorded yet.',
@@ -223,6 +237,16 @@ export const TRANSLATIONS: Record<string, Partial<TranslationStrings>> = {
     totalIncome: 'Total Income',
     totalExpense: 'Total Expense',
     netSavings: 'Net Savings',
+    borrowed: 'Borrowed',
+    lent: 'Lent',
+    borrowedMoney: 'Money Borrowed',
+    lentMoney: 'Money Lent',
+    personName: 'Person Name',
+    contactNumber: 'Contact Number',
+    dueDate: 'Due Date',
+    pending: 'Pending',
+    settled: 'Settled',
+    markSettled: 'Mark as Settled',
   },
   hi: {
     appName: 'खर्च डायरी AI',
@@ -252,8 +276,6 @@ export const TRANSLATIONS: Record<string, Partial<TranslationStrings>> = {
     edit: 'संशोधित करें',
     exportPdf: 'PDF रिपोर्ट',
     exportExcel: 'Excel / CSV',
-    exportText: 'टेक्स्ट फाइल',
-    exportImage: 'इमेज डाउनलोड',
     allCategories: 'सभी श्रेणियां',
     recentTransactions: 'हाल के लेन-देन',
     noTransactions: 'अभी तक कोई लेन-देन नहीं मिला।',
@@ -303,8 +325,6 @@ export const TRANSLATIONS: Record<string, Partial<TranslationStrings>> = {
     edit: 'Editar',
     exportPdf: 'Exportar PDF',
     exportExcel: 'Exportar Excel',
-    exportText: 'Exportar Texto',
-    exportImage: 'Exportar Imagen',
     allCategories: 'Todas las categorías',
     recentTransactions: 'Transacciones recientes',
     noTransactions: 'No hay transacciones aún.',
@@ -354,8 +374,6 @@ export const TRANSLATIONS: Record<string, Partial<TranslationStrings>> = {
     edit: '编辑',
     exportPdf: '导出 PDF',
     exportExcel: '导出 Excel/CSV',
-    exportText: '导出文本',
-    exportImage: '导出图片',
     allCategories: '所有分类',
     recentTransactions: '近期交易',
     noTransactions: '暂无交易记录。',
@@ -405,8 +423,6 @@ export const TRANSLATIONS: Record<string, Partial<TranslationStrings>> = {
     edit: 'تعديل',
     exportPdf: 'تصدير PDF',
     exportExcel: 'تصدير Excel',
-    exportText: 'تصدير نصي',
-    exportImage: 'تصدير كصورة',
     allCategories: 'كل الفئات',
     recentTransactions: 'أحدث المعاملات',
     noTransactions: 'لا توجد معاملات مسجلة بعد.',
@@ -456,8 +472,6 @@ export const TRANSLATIONS: Record<string, Partial<TranslationStrings>> = {
     edit: 'সম্পাদনা',
     exportPdf: 'PDF রিপোর্ট',
     exportExcel: 'Excel/CSV',
-    exportText: 'টেক্সট ফাইল',
-    exportImage: 'ছবি ডাউনলোড',
     allCategories: 'সকল ক্যাটেগরি',
     recentTransactions: 'সাম্প্রতিক লেনদেন',
     noTransactions: 'এখনও কোনো লেনদেন লিপিবদ্ধ হয়নি।',
@@ -507,8 +521,6 @@ export const TRANSLATIONS: Record<string, Partial<TranslationStrings>> = {
     edit: 'Editar',
     exportPdf: 'Exportar PDF',
     exportExcel: 'Exportar Excel',
-    exportText: 'Exportar Texto',
-    exportImage: 'Exportar Imagem',
     allCategories: 'Todas Categorias',
     recentTransactions: 'Transações Recentes',
     noTransactions: 'Nenhuma transação registrada ainda.',
@@ -558,8 +570,6 @@ export const TRANSLATIONS: Record<string, Partial<TranslationStrings>> = {
     edit: 'Изменить',
     exportPdf: 'Экспорт в PDF',
     exportExcel: 'Экспорт в Excel',
-    exportText: 'Экспорт в Текст',
-    exportImage: 'Экспорт картинки',
     allCategories: 'Все категории',
     recentTransactions: 'Недавние операции',
     noTransactions: 'Операций пока нет.',
@@ -609,8 +619,6 @@ export const TRANSLATIONS: Record<string, Partial<TranslationStrings>> = {
     edit: '編集',
     exportPdf: 'PDF出力',
     exportExcel: 'Excel出力',
-    exportText: 'テキスト出力',
-    exportImage: '画像出力',
     allCategories: '全カテゴリー',
     recentTransactions: '最近の取引',
     noTransactions: 'まだ記録がありません。',
@@ -660,8 +668,6 @@ export const TRANSLATIONS: Record<string, Partial<TranslationStrings>> = {
     edit: 'Modifier',
     exportPdf: 'Exporter PDF',
     exportExcel: 'Exporter Excel',
-    exportText: 'Exporter Texte',
-    exportImage: 'Exporter Image',
     allCategories: 'Toutes les catégories',
     recentTransactions: 'Transactions récentes',
     noTransactions: 'Aucune transaction enregistrée.',
@@ -711,8 +717,6 @@ export const TRANSLATIONS: Record<string, Partial<TranslationStrings>> = {
     edit: 'Bearbeiten',
     exportPdf: 'PDF exportieren',
     exportExcel: 'Excel/CSV exportieren',
-    exportText: 'Text exportieren',
-    exportImage: 'Bild exportieren',
     allCategories: 'Alle Kategorien',
     recentTransactions: 'Letzte Buchungen',
     noTransactions: 'Noch keine Buchungen vorhanden.',
@@ -762,8 +766,6 @@ export const TRANSLATIONS: Record<string, Partial<TranslationStrings>> = {
     edit: '수정',
     exportPdf: 'PDF 내보내기',
     exportExcel: 'Excel 내보내기',
-    exportText: '텍스트 내보내기',
-    exportImage: '이미지 내보내기',
     allCategories: '전체 카테고리',
     recentTransactions: '최근 내역',
     noTransactions: '기록된 내역이 없습니다.',
@@ -813,8 +815,6 @@ export const TRANSLATIONS: Record<string, Partial<TranslationStrings>> = {
     edit: 'Düzenle',
     exportPdf: 'PDF Aktar',
     exportExcel: 'Excel/CSV Aktar',
-    exportText: 'Metin Aktar',
-    exportImage: 'Resim Aktar',
     allCategories: 'Tüm Kategoriler',
     recentTransactions: 'Son İşlemler',
     noTransactions: 'Henüz işlem kaydedilmedi.',
@@ -864,8 +864,6 @@ export const TRANSLATIONS: Record<string, Partial<TranslationStrings>> = {
     edit: 'Modifica',
     exportPdf: 'Esporta PDF',
     exportExcel: 'Esporta Excel',
-    exportText: 'Esporta Testo',
-    exportImage: 'Esporta Immagine',
     allCategories: 'Tutte le categorie',
     recentTransactions: 'Transazioni recenti',
     noTransactions: 'Nessuna transazione registrata.',
@@ -915,8 +913,6 @@ export const TRANSLATIONS: Record<string, Partial<TranslationStrings>> = {
     edit: 'Sửa',
     exportPdf: 'Xuất PDF',
     exportExcel: 'Xuất Excel',
-    exportText: 'Xuất Văn bản',
-    exportImage: 'Xuất Hình ảnh',
     allCategories: 'Tất cả danh mục',
     recentTransactions: 'Giao dịch gần đây',
     noTransactions: 'Chưa có giao dịch nào.',
@@ -966,8 +962,6 @@ export const TRANSLATIONS: Record<string, Partial<TranslationStrings>> = {
     edit: 'திருத்து',
     exportPdf: 'PDF ஏற்றுமதி',
     exportExcel: 'Excel ஏற்றுமதி',
-    exportText: 'உரை கோப்பு',
-    exportImage: 'படமாக பதிவிறக்கு',
     allCategories: 'அனைத்து பிரிவுகள்',
     recentTransactions: 'சமீபத்திய பரிவர்த்தனைகள்',
     noTransactions: 'பரிவர்த்தனைகள் எதுவும் பதிவு செய்யப்படவில்லை.',
@@ -1017,8 +1011,6 @@ export const TRANSLATIONS: Record<string, Partial<TranslationStrings>> = {
     edit: 'సవరించండి',
     exportPdf: 'PDF ఎగుమతి',
     exportExcel: 'Excel ఎగుమతి',
-    exportText: 'టెక్స్ట్ ఎగుమతి',
-    exportImage: 'చిత్రంగా ఎగుమతి',
     allCategories: 'అన్ని వర్గాలు',
     recentTransactions: 'ఇటీవలి లావాదేవీలు',
     noTransactions: 'ఇంకా ఎలాంటి లావాదేవీలు నమోదు కాలేదు.',
@@ -1068,8 +1060,6 @@ export const TRANSLATIONS: Record<string, Partial<TranslationStrings>> = {
     edit: 'संपादित करा',
     exportPdf: 'PDF अहवाल',
     exportExcel: 'Excel अहवाल',
-    exportText: 'मजकूर फाइल',
-    exportImage: 'इमेज डाउनलोड',
     allCategories: 'सर्व वर्गवारी',
     recentTransactions: 'अलीकडील व्यवहार',
     noTransactions: 'अद्याप कोणतेही व्यवहार नोंदवले नाहीत.',
@@ -1119,8 +1109,6 @@ export const TRANSLATIONS: Record<string, Partial<TranslationStrings>> = {
     edit: 'ترمیم کریں',
     exportPdf: 'پی ڈی ایف رپورٹ',
     exportExcel: 'ایکسل رپورٹ',
-    exportText: 'ٹیکسٹ فائل',
-    exportImage: 'تصویر برآمد کریں',
     allCategories: 'تمام اقسام',
     recentTransactions: 'حالیہ لین دین',
     noTransactions: 'ابھی تک کوئی لین دین درج نہیں ہوا۔',

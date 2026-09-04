@@ -1,8 +1,23 @@
-<!-- Foreground SVG for adaptive icon - use as is or edit colors -->
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
-  <!-- Keep the brand mark from main icon -->
-  <path d="M128 120C128 106.745 138.745 96 152 96H360C373.255 96 384 106.745 384 120V392C384 405.255 373.255 416 360 416H152C138.745 416 128 405.255 128 392V120Z" stroke="#3F3F46" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="M176 96V416" stroke="#D4D4D8" stroke-width="8" stroke-dasharray="12 12"/>
-  <path d="M240 240C240 210 270 180 310 180C310 210 280 240 240 240Z" fill="#D1FAE5" stroke="#10B981" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="M228 296H288M228 320H276M228 296C244 296 256 308 256 324C256 340 244 348 232 352L276 388" stroke="#3F3F46" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- Ledger Book Body -->
+  <rect x="140" y="112" width="232" height="288" rx="24" fill="#FAF8F5"/>
+
+  <!-- Emerald Book Spine (Left) -->
+  <path d="M140 136C140 122.745 150.745 112 164 112H182V400H164C150.745 400 140 389.255 140 376V136Z" fill="#047857"/>
+  <line x1="182" y1="112" x2="182" y2="400" stroke="#F59E0B" stroke-width="4"/>
+
+  <!-- Golden Bookmark Ribbon -->
+  <path d="M210 112H240V188L225 174L210 188V112Z" fill="#F59E0B"/>
+
+  <!-- Financial Growth Bars -->
+  <rect x="232" y="316" width="22" height="44" rx="4" fill="#34D399"/>
+  <rect x="266" y="284" width="22" height="76" rx="4" fill="#10B981"/>
+  <rect x="300" y="244" width="22" height="116" rx="4" fill="#059669"/>
+
+  <!-- Trend Arrow -->
+  <path d="M232 298L268 262L302 272L340 218" stroke="#047857" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M322 218H340V236" stroke="#047857" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- Rupee Crest -->
+  <path d="M260 152H316M260 172H306M276 152V194C296 194 296 172 276 172L316 216" stroke="#1F2937" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
 </svg>

@@ -94,6 +94,33 @@ if (fs.existsSync(manifestPath)) {
   }
 }
 
+// Patch Notification Icon in AndroidManifest.xml
+if (fs.existsSync(manifestPath)) {
+  let m = safeRead(manifestPath);
+  if (m && !/default_notification_icon/.test(m)) {
+    const metaData = `
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_icon"
+            android:resource="@drawable/ic_notification" />
+`;
+    m = m.replace('</application>', metaData + '\n    </application>');
+    safeWrite(manifestPath, m);
+    console.log('Patched AndroidManifest.xml with notification icon');
+  }
+}
+
+// Ensure icon assets are generated
+try {
+  const { execSync } = await import('child_process');
+  const genScript = path.join(projectRoot, 'scripts', 'generate_icons.py');
+  if (fs.existsSync(genScript)) {
+    execSync(`python3 "${genScript}"`, { stdio: 'inherit' });
+    console.log('Generated Android mipmap and PWA icons.');
+  }
+} catch (e) {
+  console.warn('Icon generator warning:', e.message);
+}
+
 console.log('Android patch complete.');
 
 

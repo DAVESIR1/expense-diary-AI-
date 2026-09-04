@@ -13,7 +13,8 @@ import {
   UserProfile, 
   PendingAIMessage, 
   DiaryEntry, 
-  SecurityConfig 
+  SecurityConfig,
+  BorrowedLentRecord 
 } from './types';
 import { getTranslation, LANGUAGES } from './data/languages';
 import { DEFAULT_CATEGORIES, INITIAL_TRANSACTIONS, INITIAL_USER_PROFILE } from './data/initialData';
@@ -30,6 +31,10 @@ import { AndroidSMSPermissionModal } from './components/AndroidSMSPermissionModa
 import { AuthLockScreen } from './components/AuthLockScreen';
 import { checkAndTriggerDailyReminder } from './services/notifications';
 import { hashWithPBKDF2 } from './services/security';
+import { MigrationManager } from './services/dataMigration';
+
+// Sequential data migration & backward compatibility (§21)
+MigrationManager.runMigrations();
 
 export default function App() {
   // Persistent Language State
@@ -124,6 +129,19 @@ export default function App() {
     return [];
   });
 
+  // Borrowed/Lent Records State
+  const [borrowedLentRecords, setBorrowedLentRecords] = useState<BorrowedLentRecord[]>(() => {
+    const saved = localStorage.getItem('expense_diary_borrow_lent');
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch {
+        return [];
+      }
+    }
+    return [];
+  });
+
   // Categories State
   const [categories, setCategories] = useState<Category[]>(() => {
     const saved = localStorage.getItem('expense_diary_categories');
@@ -175,6 +193,10 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('expense_diary_entries', JSON.stringify(diaryEntries));
   }, [diaryEntries]);
+
+  useEffect(() => {
+    localStorage.setItem('expense_diary_borrow_lent', JSON.stringify(borrowedLentRecords));
+  }, [borrowedLentRecords]);
 
   useEffect(() => {
     localStorage.setItem('expense_diary_categories', JSON.stringify(categories));
@@ -242,20 +264,21 @@ export default function App() {
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
   }, [securityConfig]);
 
-  // Daily Reminder Interval
+  // Daily Reminder Interval with smart duplicate suppression (§11)
   useEffect(() => {
     const checkReminder = () => {
       checkAndTriggerDailyReminder(
         profile.enableDailyReminder,
         profile.dailyReminderTime || '20:00',
-        { reminderTitle: t.reminderTitle, reminderBody: t.reminderBody }
+        { reminderTitle: t.reminderTitle, reminderBody: t.reminderBody },
+        transactions
       );
     };
 
     checkReminder();
     const interval = setInterval(checkReminder, 60000);
     return () => clearInterval(interval);
-  }, [profile.enableDailyReminder, profile.dailyReminderTime, t]);
+  }, [profile.enableDailyReminder, profile.dailyReminderTime, t, transactions]);
 
   // Transaction Handlers
   const handleOpenAddModal = (type: TransactionType) => {
@@ -290,6 +313,23 @@ export default function App() {
 
   const handleDeleteDiaryEntry = (id: string) => {
     setDiaryEntries((prev) => prev.filter((e) => e.id !== id));
+  };
+
+  // Borrowed/Lent Handlers
+  const handleSaveBorrowLent = (record: BorrowedLentRecord) => {
+    setBorrowedLentRecords((prev) => {
+      const idx = prev.findIndex((r) => r.id === record.id);
+      if (idx >= 0) {
+        const updated = [...prev];
+        updated[idx] = record;
+        return updated;
+      }
+      return [record, ...prev];
+    });
+  };
+
+  const handleDeleteBorrowLent = (id: string) => {
+    setBorrowedLentRecords((prev) => prev.filter((r) => r.id !== id));
   };
 
   // Pending AI auto-detect Handlers
@@ -344,6 +384,10 @@ export default function App() {
 
   const handleRestoreDiaryEntries = (entries: DiaryEntry[]) => {
     setDiaryEntries(entries);
+  };
+
+  const handleRestoreBorrowedLentRecords = (records: BorrowedLentRecord[]) => {
+    setBorrowedLentRecords(records);
   };
 
   // Reset PIN with Passphrase
@@ -544,6 +588,9 @@ export default function App() {
             entries={diaryEntries}
             onSaveEntry={handleSaveDiaryEntry}
             onDeleteEntry={handleDeleteDiaryEntry}
+            borrowedLentRecords={borrowedLentRecords}
+            onSaveBorrowLent={handleSaveBorrowLent}
+            onDeleteBorrowLent={handleDeleteBorrowLent}
             securityConfig={securityConfig}
             onUpdateSecurityConfig={handleUpdateSecurityConfig}
             transactions={transactions}
@@ -594,6 +641,8 @@ export default function App() {
             onRestoreTransactions={handleRestoreTransactions}
             diaryEntries={diaryEntries}
             onRestoreDiaryEntries={handleRestoreDiaryEntries}
+            borrowedLentRecords={borrowedLentRecords}
+            onRestoreBorrowedLentRecords={handleRestoreBorrowedLentRecords}
             securityConfig={securityConfig}
             onUpdateSecurityConfig={handleUpdateSecurityConfig}
             savedPassphraseWords={savedPassphraseWords}

@@ -19,10 +19,11 @@ import {
   Eye, 
   EyeOff, 
   AlertCircle, 
-  RefreshCw 
+  RefreshCw,
+  Layers 
 } from 'lucide-react';
 import { LANGUAGES, TranslationStrings } from '../data/languages';
-import { Category, Transaction, UserProfile, SecurityConfig, DiaryEntry } from '../types';
+import { Category, Transaction, UserProfile, SecurityConfig, DiaryEntry, BorrowedLentRecord } from '../types';
 import { SAMPLE_TRANSACTIONS } from '../data/initialData';
 import { usePWAInstall } from '../hooks/usePWAInstall';
 import { 
@@ -37,6 +38,7 @@ import {
 } from '../services/cloudBackup';
 import { verifyPBKDF2, normalizeWords } from '../services/security';
 import { SecuritySetupModal } from './SecuritySetupModal';
+import { MultiRestoreModal } from './MultiRestoreModal';
 
 interface SettingsScreenProps {
   currentLang: string;
@@ -57,6 +59,8 @@ interface SettingsScreenProps {
   onRestoreTransactions: (txs: Transaction[]) => void;
   diaryEntries: DiaryEntry[];
   onRestoreDiaryEntries: (entries: DiaryEntry[]) => void;
+  borrowedLentRecords?: BorrowedLentRecord[];
+  onRestoreBorrowedLentRecords?: (records: BorrowedLentRecord[]) => void;
   securityConfig: SecurityConfig;
   onUpdateSecurityConfig: (cfg: Partial<SecurityConfig>) => void;
   savedPassphraseWords: string[];
@@ -82,6 +86,8 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   onRestoreTransactions,
   diaryEntries,
   onRestoreDiaryEntries,
+  borrowedLentRecords = [],
+  onRestoreBorrowedLentRecords,
   securityConfig,
   onUpdateSecurityConfig,
   savedPassphraseWords,
@@ -106,6 +112,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   const [pendingRestoreEnvelope, setPendingRestoreEnvelope] = useState<EncryptedBackupEnvelope | null>(null);
   const [restorePassphraseInput, setRestorePassphraseInput] = useState('');
   const [restoreError, setRestoreError] = useState<string | null>(null);
+  const [isMultiRestoreOpen, setIsMultiRestoreOpen] = useState(false);
   const [isRestoring, setIsRestoring] = useState(false);
 
   // Cloud snapshots
@@ -291,6 +298,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
         categories,
         transactions,
         diaryEntries,
+        borrowedLentRecords,
       };
 
       const envelope = await encryptPayload(payload, passphrase);
@@ -474,7 +482,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
 
           <label className="p-3.5 rounded-2xl bg-stone-50 border border-stone-200 hover:bg-stone-100 text-xs font-bold text-stone-800 flex items-center justify-center gap-2 cursor-pointer transition">
             <Upload className="w-4 h-4 text-stone-600" />
-            <span>{isGu ? 'બેકઅપ ફાઈલ પસંદ કરી રીસ્ટોર કરો' : 'Restore Backup File'}</span>
+            <span>{isGu ? 'બેકઅપ ફાઈલ પસંદ કરી રીસ્ટોર કરો' : 'Restore Single File'}</span>
             <input
               type="file"
               accept=".edb,.json"
@@ -482,6 +490,14 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
               className="hidden"
             />
           </label>
+
+          <button
+            onClick={() => setIsMultiRestoreOpen(true)}
+            className="p-3.5 rounded-2xl bg-indigo-50 border border-indigo-200 hover:bg-indigo-100 text-xs font-bold text-indigo-950 flex items-center justify-center gap-2 cursor-pointer transition col-span-1 sm:col-span-2"
+          >
+            <Layers className="w-4 h-4 text-indigo-700" />
+            <span>{isGu ? 'મલ્ટી-ફાઈલ / ફોલ્ડર બેકઅપ તપાસો અને મર્જ કરો (Smart Merge)' : 'Multi-File / Folder Restore & Deduplicated Merge'}</span>
+          </button>
         </div>
 
         {/* Cloud Vault Card */}
@@ -957,6 +973,23 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           </div>
         </div>
       )}
+
+      {/* Multi-File Restore & Smart Merge Modal (§6) */}
+      <MultiRestoreModal
+        isOpen={isMultiRestoreOpen}
+        onClose={() => setIsMultiRestoreOpen(false)}
+        currentTransactions={transactions}
+        currentDiaryEntries={diaryEntries}
+        currentBorrowLend={borrowedLentRecords}
+        onCommitRestore={(mergedTxs, mergedDiary, mergedBL) => {
+          onRestoreTransactions(mergedTxs);
+          onRestoreDiaryEntries(mergedDiary);
+          if (onRestoreBorrowedLentRecords) {
+            onRestoreBorrowedLentRecords(mergedBL);
+          }
+        }}
+        isGu={isGu}
+      />
     </div>
   );
 };

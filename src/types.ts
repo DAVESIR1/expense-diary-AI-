@@ -17,6 +17,7 @@ export interface Transaction {
   evidence?: string;
   evidenceSource?: 'sms' | 'notification' | 'manual';
   referenceNumber?: string;
+  updatedAt?: string;
 }
 
 export interface DiaryEntry {
@@ -28,6 +29,25 @@ export interface DiaryEntry {
   mood?: 'happy' | 'neutral' | 'sad' | 'excited' | 'stressed' | 'peaceful';
   tags?: string[];
   linkedExpenseIds?: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type BorrowLendDirection = 'borrowed' | 'lent';
+export type BorrowLendStatus = 'pending' | 'partial' | 'settled';
+
+export interface BorrowedLentRecord {
+  id: string;
+  direction: BorrowLendDirection;
+  amount: number;
+  partialAmountReturned?: number;
+  personName: string;
+  contactNumber?: string;
+  date: string; // YYYY-MM-DD
+  dueDate?: string; // YYYY-MM-DD
+  note?: string;
+  status: BorrowLendStatus;
+  settledDate?: string;
   createdAt: string;
   updatedAt: string;
 }
