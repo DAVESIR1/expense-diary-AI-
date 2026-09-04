@@ -201,8 +201,17 @@ def render_icon(size, is_round=False, is_foreground_only=False):
             
     return bytes(buf)
 
+def write_xml(filename, content):
+    os.makedirs(os.path.dirname(os.path.abspath(filename)), exist_ok=True)
+    with open(filename, 'w', encoding='utf-8') as f:
+        f.write(content.strip() + '\n')
+
 def generate_all():
-    print("Generating Android mipmap icons and PWA icons...")
+    print("Generating Android mipmap icons, vector drawables, and PWA icons...")
+    
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    project_root = os.path.abspath(os.path.join(script_dir, '..'))
+    res_dir = os.path.join(project_root, 'android', 'app', 'src', 'main', 'res')
     
     # 1. Android mipmap densities (square & round)
     densities = {
@@ -212,8 +221,6 @@ def generate_all():
         'mipmap-xxhdpi': 144,
         'mipmap-xxxhdpi': 192,
     }
-    
-    res_dir = 'android/app/src/main/res'
     
     for folder, dim in densities.items():
         dir_path = os.path.join(res_dir, folder)
@@ -235,18 +242,116 @@ def generate_all():
 
     # 2. PWA Web icons
     pwa_targets = [
-        ('public/icon-192.png', 192, False),
-        ('public/icon-512.png', 512, False),
-        ('public/icon-maskable-192.png', 192, True),
-        ('public/icon-maskable-512.png', 512, True),
+        (os.path.join(project_root, 'public', 'icon-192.png'), 192, False),
+        (os.path.join(project_root, 'public', 'icon-512.png'), 512, False),
+        (os.path.join(project_root, 'public', 'icon-maskable-192.png'), 192, True),
+        (os.path.join(project_root, 'public', 'icon-maskable-512.png'), 512, True),
     ]
     
     for p, dim, is_mask in pwa_targets:
         buf = render_icon(dim, is_round=is_mask)
         write_png(p, dim, dim, buf)
-        print(f"  ✓ {p} ({dim}x{dim}) generated")
+        print(f"  ✓ {os.path.basename(p)} ({dim}x{dim}) generated")
+
+    # 3. Android Vector Drawables and XMLs
+    # Notification Icon (Monochrome white on transparent)
+    ic_notif_xml = '''<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M18,2H6C4.9,2 4,2.9 4,4v16c0,1.1 0.9,2 2,2h12c1.1,0 2,-0.9 2,-2V4C20,2.9 19.1,2 18,2z M12,10l-2,-1.5L8,10V4h4V10z M18,20H6V4h1v8l3,-2.25L13,12V4h5V20z" />
+</vector>'''
+    write_xml(os.path.join(res_dir, 'drawable', 'ic_notification.xml'), ic_notif_xml)
+    print("  ✓ drawable/ic_notification.xml generated")
+
+    # Adaptive Icon Foreground Vector
+    ic_fg_xml = '''<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#33000000"
+        android:pathData="M32,29 C30,29 28,31 28,34 L28,80 C28,83 30,85 32,85 L76,85 C79,85 81,83 81,80 L81,34 C81,31 79,29 76,29 Z" />
+    <path
+        android:fillColor="#FAF8F5"
+        android:pathData="M33,26 C30.8,26 29,27.8 29,30 L29,76 C29,78.2 30.8,80 33,80 L75,80 C77.2,80 79,78.2 79,76 L79,30 C79,27.8 77.2,26 75,26 Z" />
+    <path
+        android:fillColor="#047857"
+        android:pathData="M33,26 C30.8,26 29,27.8 29,30 L29,76 C29,78.2 30.8,80 33,80 L38,80 L38,26 Z" />
+    <path
+        android:fillColor="#F59E0B"
+        android:pathData="M37,26 L38.5,26 L38.5,80 L37,80 Z" />
+    <path
+        android:fillColor="#F59E0B"
+        android:pathData="M43,26 L49,26 L49,42 L46,39 L43,42 Z" />
+    <path
+        android:fillColor="#34D399"
+        android:pathData="M47,65 L52,65 L52,74 L47,74 Z" />
+    <path
+        android:fillColor="#10B981"
+        android:pathData="M54,58 L59,58 L59,74 L54,74 Z" />
+    <path
+        android:fillColor="#059669"
+        android:pathData="M61,50 L66,50 L66,74 L61,74 Z" />
+    <path
+        android:strokeColor="#047857"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M47,61 L54,54 L61,56 L70,44 M65,44 L70,44 L70,49" />
+    <path
+        android:strokeColor="#1F2937"
+        android:strokeWidth="1.8"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M54,34 L66,34 M54,38 L64,38 M58,34 L58,43 C63,43 63,38 58,38 L66,48" />
+</vector>'''
+    write_xml(os.path.join(res_dir, 'drawable', 'ic_launcher_foreground.xml'), ic_fg_xml)
+    write_xml(os.path.join(res_dir, 'drawable-v24', 'ic_launcher_foreground.xml'), ic_fg_xml)
+    print("  ✓ drawable/ic_launcher_foreground.xml generated")
+
+    # Adaptive Icon Background Vector
+    ic_bg_xml = '''<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#064E3B"
+        android:pathData="M0,0h108v108h-108z" />
+    <path
+        android:fillColor="#0D047857"
+        android:pathData="M0,0 L108,0 L108,54 L0,54 Z" />
+</vector>'''
+    write_xml(os.path.join(res_dir, 'drawable', 'ic_launcher_background.xml'), ic_bg_xml)
+    print("  ✓ drawable/ic_launcher_background.xml generated")
+
+    # Adaptive Icon Background Color Resource
+    ic_bg_val_xml = '''<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="ic_launcher_background">#064E3B</color>
+</resources>'''
+    write_xml(os.path.join(res_dir, 'values', 'ic_launcher_background.xml'), ic_bg_val_xml)
+    print("  ✓ values/ic_launcher_background.xml generated")
+
+    # Adaptive Icon Root XMLs
+    ic_adapt_xml = '''<?xml version="1.0" encoding="utf-8"?>
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@drawable/ic_launcher_background"/>
+    <foreground android:drawable="@drawable/ic_launcher_foreground"/>
+</adaptive-icon>'''
+    write_xml(os.path.join(res_dir, 'mipmap-anydpi-v26', 'ic_launcher.xml'), ic_adapt_xml)
+    write_xml(os.path.join(res_dir, 'mipmap-anydpi-v26', 'ic_launcher_round.xml'), ic_adapt_xml)
+    print("  ✓ mipmap-anydpi-v26/ic_launcher.xml generated")
         
-    print("All PNG icons successfully generated!")
+    print("All icons and drawables successfully generated!")
 
 if __name__ == '__main__':
     generate_all()

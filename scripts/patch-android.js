@@ -94,8 +94,39 @@ if (fs.existsSync(manifestPath)) {
   }
 }
 
-// Patch Notification Icon in AndroidManifest.xml
-if (fs.existsSync(manifestPath)) {
+// Ensure icon assets and drawables are generated
+try {
+  const { execSync } = await import('child_process');
+  const genScript = path.join(projectRoot, 'scripts', 'generate_icons.py');
+  if (fs.existsSync(genScript)) {
+    execSync(`python3 "${genScript}"`, { stdio: 'inherit' });
+    console.log('Generated Android mipmap and PWA icons.');
+  }
+} catch (e) {
+  console.warn('Icon generator warning:', e.message);
+}
+
+// Fallback: directly ensure drawable/ic_notification.xml exists
+const resDir = path.join(androidDir, 'app', 'src', 'main', 'res');
+const notifXmlPath = path.join(resDir, 'drawable', 'ic_notification.xml');
+if (!fs.existsSync(notifXmlPath)) {
+  fs.mkdirSync(path.dirname(notifXmlPath), { recursive: true });
+  const fallbackNotifXml = `<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M18,2H6C4.9,2 4,2.9 4,4v16c0,1.1 0.9,2 2,2h12c1.1,0 2,-0.9 2,-2V4C20,2.9 19.1,2 18,2z M12,10l-2,-1.5L8,10V4h4V10z M18,20H6V4h1v8l3,-2.25L13,12V4h5V20z" />
+</vector>`;
+  safeWrite(notifXmlPath, fallbackNotifXml);
+  console.log('Created fallback drawable/ic_notification.xml');
+}
+
+// Patch Notification Icon in AndroidManifest.xml only if drawable exists
+if (fs.existsSync(manifestPath) && fs.existsSync(notifXmlPath)) {
   let m = safeRead(manifestPath);
   if (m && !/default_notification_icon/.test(m)) {
     const metaData = `
@@ -107,18 +138,6 @@ if (fs.existsSync(manifestPath)) {
     safeWrite(manifestPath, m);
     console.log('Patched AndroidManifest.xml with notification icon');
   }
-}
-
-// Ensure icon assets are generated
-try {
-  const { execSync } = await import('child_process');
-  const genScript = path.join(projectRoot, 'scripts', 'generate_icons.py');
-  if (fs.existsSync(genScript)) {
-    execSync(`python3 "${genScript}"`, { stdio: 'inherit' });
-    console.log('Generated Android mipmap and PWA icons.');
-  }
-} catch (e) {
-  console.warn('Icon generator warning:', e.message);
 }
 
 console.log('Android patch complete.');
