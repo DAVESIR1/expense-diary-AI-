@@ -71,9 +71,8 @@ export const ReportScreen: React.FC<ReportScreenProps> = ({
   const [layoutStyle, setLayoutStyle] = useState<LayoutStyle>('box');
   const [pageTheme, setPageTheme] = useState<PageTheme>('paper');
 
-  // 6. Export Modal state (Task 9: Save to Device vs Share File)
-  const [exportModalType, setExportModalType] = useState<'pdf' | 'excel' | null>(null);
   const [exportNotice, setExportNotice] = useState<string | null>(null);
+  const [exportModalType, setExportModalType] = useState<'pdf' | 'excel' | null>(null);
 
   const showExportNotice = (msg: string) => {
     setExportNotice(msg);
@@ -304,100 +303,77 @@ export const ReportScreen: React.FC<ReportScreenProps> = ({
 </html>`;
   };
 
-  // Task 9: Save to Device
-  const executeSaveToDevice = async () => {
-    const currentModal = exportModalType;
-    setExportModalType(null);
+  // 1-Tap PDF Export (Pristine Printable HTML to Native Print/PDF + Downloads)
+  const handlePrintPdf = async () => {
     const dateStr = new Date().toISOString().split('T')[0];
+    const jobName = `Expense_Report_${period}_${dateStr}`;
+    const htmlContent = generateHtmlReport();
+    const filename = `${jobName}.html`;
 
-    if (currentModal === 'excel') {
-      const csvContent = generateCsvString();
-      const filename = `Expense_Report_${period}_${dateStr}.csv`;
-      try {
-        const res = await NativeBridgeService.saveFileToDownloads(filename, csvContent, 'text/csv');
-        if (res && res.success) {
-          showExportNotice(
-            isGu
-              ? `Excel રિપોર્ટ Downloads ફોલ્ડરમાં સેવ થયો: ${filename}`
-              : `Excel report saved to Downloads folder: ${filename}`
-          );
-          return;
-        }
-      } catch {}
-      downloadCsvBlob(csvContent, filename);
-      showExportNotice(
-        isGu
-          ? `Excel રિપોર્ટ ડાઉનલોડ શરૂ થયો: ${filename}`
-          : `Excel report download started: ${filename}`
-      );
-    } else if (currentModal === 'pdf') {
-      const htmlContent = generateHtmlReport();
-      const filename = `Expense_Report_${period}_${dateStr}.html`;
+    // 1. Save HTML report copy to Downloads folder via Scoped Storage
+    try {
+      await NativeBridgeService.saveFileToDownloads(filename, htmlContent, 'text/html');
+    } catch {}
 
-      // 1. Save HTML copy to Downloads folder via Scoped Storage
-      try {
-        await NativeBridgeService.saveFileToDownloads(filename, htmlContent, 'text/html');
-      } catch {}
+    // 2. Trigger native Android Print / "Save as PDF" dialog with off-screen WebView
+    try {
+      const printed = await NativeBridgeService.printDocument(jobName, htmlContent);
+      if (printed) {
+        showExportNotice(
+          isGu
+            ? `PDF પ્રિન્ટ / 'Save as PDF' ડાયલોગ શરૂ થયો.`
+            : `PDF Print / 'Save as PDF' dialog opened.`
+        );
+        return;
+      }
+    } catch {}
 
-      // 2. Trigger native Android Print / "Save as PDF" dialog
-      try {
-        const printed = await NativeBridgeService.printDocument(`Expense_Report_${period}_${dateStr}`);
-        if (printed) {
-          showExportNotice(
-            isGu
-              ? `PDF પ્રિન્ટ / 'Save as PDF' ડાયલોગ શરૂ થયો.`
-              : `PDF Print / 'Save as PDF' dialog opened.`
-          );
-          return;
-        }
-      } catch {}
+    // 3. Web Print fallback
+    try {
+      window.print();
+    } catch {}
 
-      // 3. Web Print fallback
-      try {
-        window.print();
-      } catch {}
-
-      showExportNotice(
-        isGu
-          ? `રિપોર્ટ Downloads ફોલ્ડરમાં સેવ થયો (${filename})`
-          : `Report saved to Downloads folder (${filename})`
-      );
-    }
+    showExportNotice(
+      isGu
+        ? `રિપોર્ટ Downloads ફોલ્ડરમાં સેવ થયો (${filename})`
+        : `Report saved to Downloads folder (${filename})`
+    );
   };
 
-  // Task 9: Share via Apps
-  const executeShare = async () => {
-    const currentModal = exportModalType;
-    setExportModalType(null);
+  // 1-Tap Excel / CSV Export (Downloads folder + optional share)
+  const handleExportExcel = async () => {
     const dateStr = new Date().toISOString().split('T')[0];
+    const filename = `Expense_Report_${period}_${dateStr}.csv`;
+    const csvContent = generateCsvString();
 
-    if (currentModal === 'excel') {
-      const csvContent = generateCsvString();
-      const filename = `Expense_Report_${period}_${dateStr}.csv`;
-      try {
-        const shared = await NativeBridgeService.shareFile(
-          filename,
-          csvContent,
-          'text/csv',
-          isGu ? 'નાણાકીય રિપોર્ટ (Excel)' : 'Financial Report (Excel)'
+    try {
+      const res = await NativeBridgeService.saveFileToDownloads(filename, csvContent, 'text/csv');
+      if (res && res.success) {
+        showExportNotice(
+          isGu
+            ? `Excel (CSV) રિપોર્ટ Downloads ફોલ્ડરમાં સેવ થયો: ${filename}`
+            : `Excel (CSV) report saved to Downloads folder: ${filename}`
         );
-        if (shared.success) return;
-      } catch {}
-      handleShareReport();
-    } else if (currentModal === 'pdf') {
-      const htmlContent = generateHtmlReport();
-      const filename = `Expense_Report_${period}_${dateStr}.html`;
-      try {
-        const shared = await NativeBridgeService.shareFile(
-          filename,
-          htmlContent,
-          'text/html',
-          isGu ? 'નાણાકીય રિપોર્ટ (PDF/HTML)' : 'Financial Report (PDF/HTML)'
-        );
-        if (shared.success) return;
-      } catch {}
-      handleShareReport();
-    }
+        // Also prompt native share sheet for quick export to WhatsApp / Drive
+        try {
+          await NativeBridgeService.shareFile(
+            filename,
+            csvContent,
+            'text/csv',
+            isGu ? 'નાણાકીય હિસાબ Excel' : 'Expense Diary Financial Report'
+          );
+        } catch {}
+        return;
+      }
+    } catch {}
+
+    // Web browser blob fallback
+    downloadCsvBlob(csvContent, filename);
+    showExportNotice(
+      isGu
+        ? `Excel રિપોર્ટ ડાઉનલોડ શરૂ થયો: ${filename}`
+        : `Excel report download started: ${filename}`
+    );
   };
 
   // Android Native Share Sheet
@@ -420,6 +396,52 @@ export const ReportScreen: React.FC<ReportScreenProps> = ({
     }
   };
 
+  // Export modal action handlers
+  const executeSaveToDevice = async () => {
+    setExportModalType(null);
+    if (exportModalType === 'pdf') {
+      await handlePrintPdf();
+    } else {
+      await handleExportExcel();
+    }
+  };
+
+  const executeShare = async () => {
+    const modalType = exportModalType;
+    setExportModalType(null);
+    if (modalType === 'pdf') {
+      // Share the HTML report content
+      const htmlContent = generateHtmlReport();
+      const dateStr = new Date().toISOString().split('T')[0];
+      const filename = `Expense_Report_${period}_${dateStr}.html`;
+      try {
+        await NativeBridgeService.shareFile(
+          filename,
+          htmlContent,
+          'text/html',
+          isGu ? 'નાણાકીય PDF રિપોર્ટ' : 'Expense Diary Financial Report'
+        );
+      } catch {
+        await handleShareReport();
+      }
+    } else {
+      // Share CSV content
+      const csvContent = generateCsvString();
+      const dateStr = new Date().toISOString().split('T')[0];
+      const filename = `Expense_Report_${period}_${dateStr}.csv`;
+      try {
+        await NativeBridgeService.shareFile(
+          filename,
+          csvContent,
+          'text/csv',
+          isGu ? 'નાણાકીય Excel રિપોર્ટ' : 'Expense Diary Financial Report'
+        );
+      } catch {
+        await handleShareReport();
+      }
+    }
+  };
+
 
   return (
     <div id="report-screen-container" className="space-y-6 pb-28">
@@ -432,16 +454,48 @@ export const ReportScreen: React.FC<ReportScreenProps> = ({
       )}
 
       {/* Header */}
-      <div className="p-5 sm:p-6 rounded-3xl bg-white border border-stone-200 shadow-xs">
-        <h2 className="text-xl font-bold text-stone-900 tracking-tight flex items-center gap-2">
-          <FileText className="w-5 h-5 text-emerald-600 stroke-[2.2]" />
-          <span>{t.report}</span>
-        </h2>
-        <p className="text-xs text-stone-500 mt-1">
-          {isGu
-            ? 'વ્યવસાયિક PDF અને Excel રિપોર્ટ જનરેશન અને એક્સપોર્ટ'
-            : 'Professional PDF & Excel reports with dynamic filtering'}
-        </p>
+      <div className="p-5 sm:p-6 rounded-3xl bg-white border border-stone-200 shadow-xs flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+          <h2 className="text-xl font-bold text-stone-900 tracking-tight flex items-center gap-2">
+            <FileText className="w-5 h-5 text-emerald-600 stroke-[2.2]" />
+            <span>{t.report}</span>
+          </h2>
+          <p className="text-xs text-stone-500 mt-1">
+            {isGu
+              ? 'વ્યવસાયિક PDF અને Excel રિપોર્ટ જનરેશન અને એક્સપોર્ટ'
+              : 'Professional PDF & Excel reports with dynamic filtering'}
+          </p>
+        </div>
+
+        {/* Header Action Buttons: Strictly PDF, Excel and Share */}
+        <div className="flex items-center gap-2 flex-wrap">
+          <button
+            id="export-pdf-btn-header"
+            onClick={handlePrintPdf}
+            className="flex-1 sm:flex-none py-2.5 px-4 rounded-xl bg-stone-900 hover:bg-stone-800 text-white font-semibold text-xs transition cursor-pointer flex items-center justify-center gap-2 shadow-xs active:scale-98"
+          >
+            <Printer className="w-4 h-4 text-stone-300" />
+            <span>{t.exportPdf}</span>
+          </button>
+
+          <button
+            id="export-excel-btn-header"
+            onClick={handleExportExcel}
+            className="flex-1 sm:flex-none py-2.5 px-4 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white font-semibold text-xs transition cursor-pointer flex items-center justify-center gap-2 shadow-xs active:scale-98"
+          >
+            <FileSpreadsheet className="w-4 h-4 text-emerald-200" />
+            <span>{t.exportExcel}</span>
+          </button>
+
+          <button
+            id="share-report-btn-header"
+            onClick={handleShareReport}
+            className="p-2.5 rounded-xl border border-stone-200 bg-stone-50 hover:bg-stone-100 text-stone-700 transition cursor-pointer flex items-center justify-center shadow-xs"
+            title={isGu ? 'શેર કરો' : 'Share'}
+          >
+            <Share2 className="w-4 h-4" />
+          </button>
+        </div>
       </div>
 
       {/* 1. FILTERS & CATEGORY CONFIGURATION CARD (Task 10: AT TOP) */}
@@ -784,7 +838,7 @@ export const ReportScreen: React.FC<ReportScreenProps> = ({
         <div className="flex items-center gap-3 flex-wrap pt-1">
           <button
             id="export-pdf-btn"
-            onClick={() => setExportModalType('pdf')}
+            onClick={handlePrintPdf}
             className="flex-1 min-w-[140px] py-3 px-4 rounded-xl bg-stone-900 hover:bg-stone-800 text-white font-bold text-xs transition cursor-pointer flex items-center justify-center gap-2 shadow-xs active:scale-98"
           >
             <Printer className="w-4 h-4 text-stone-300" />
@@ -793,7 +847,7 @@ export const ReportScreen: React.FC<ReportScreenProps> = ({
 
           <button
             id="export-excel-btn"
-            onClick={() => setExportModalType('excel')}
+            onClick={handleExportExcel}
             className="flex-1 min-w-[140px] py-3 px-4 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs transition cursor-pointer flex items-center justify-center gap-2 shadow-xs active:scale-98"
           >
             <FileSpreadsheet className="w-4 h-4 text-emerald-200" />

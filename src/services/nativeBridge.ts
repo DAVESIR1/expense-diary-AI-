@@ -28,13 +28,13 @@ interface NativeBridgePluginInterface {
   checkSMSPermissionDetailed(): Promise<{ granted: boolean; isRestricted: boolean; sdkInt?: number }>;
   openUsageSettings(): Promise<{ success: boolean }>;
   getRecentPaymentAppUsage(): Promise<{ hasPermission: boolean; apps: AppUsageRecord[] }>;
-  readRecentBankSMS(): Promise<{ hasPermission: boolean; messages: BankSMSMessage[] }>;
+  readRecentBankSMS(options?: { days?: number }): Promise<{ hasPermission: boolean; messages: BankSMSMessage[]; count?: number }>;
   showNotification(options: { title: string; body: string }): Promise<{ success: boolean }>;
   saveFileToDownloads(options: { fileName: string; mimeType: string; base64Data?: string; textContent?: string }): Promise<{ success: boolean; filePath?: string; fileName?: string }>;
   shareFile(options: { fileName: string; mimeType: string; base64Data?: string; textContent?: string; title?: string }): Promise<{ success: boolean }>;
   isBiometricsAvailable(): Promise<{ available: boolean; isSecure: boolean }>;
   authenticateBiometrics(options: { title?: string; subtitle?: string; cancelText?: string }): Promise<{ success: boolean; error?: string }>;
-  printDocument(options: { jobName?: string }): Promise<{ success: boolean; error?: string }>;
+  printDocument(options: { jobName?: string; htmlContent?: string }): Promise<{ success: boolean; error?: string }>;
 }
 
 // Register native bridge plugin (provided by Android NativeBridgePlugin.java)
@@ -127,9 +127,9 @@ export const NativeBridgeService = {
   /**
    * Read recent financial and bank SMS from Android SMS content provider.
    */
-  async readRecentBankSMS(): Promise<BankSMSMessage[]> {
+  async readRecentBankSMS(days: number = 90): Promise<BankSMSMessage[]> {
     try {
-      const res = await NativeBridgeImpl.readRecentBankSMS();
+      const res = await NativeBridgeImpl.readRecentBankSMS({ days });
       if (res && res.messages) {
         return res.messages;
       }
@@ -337,11 +337,13 @@ export const NativeBridgeService = {
 
   /**
    * Trigger native Android PrintManager to print or "Save as PDF".
+   * If htmlContent is provided, an off-screen WebView renders the pristine printable report.
    */
-  async printDocument(jobName?: string): Promise<boolean> {
+  async printDocument(jobName?: string, htmlContent?: string): Promise<boolean> {
     try {
       const res = await NativeBridgeImpl.printDocument({
         jobName: jobName || `Expense_Report_${Date.now()}`,
+        htmlContent: htmlContent || '',
       });
       return !!res.success;
     } catch {

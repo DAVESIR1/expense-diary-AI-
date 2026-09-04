@@ -21,12 +21,20 @@ if (!fs.existsSync(androidDir)) {
   process.exit(1);
 }
 
-// 1. Copy persistent debug keystore for consistent signing across all builds
-const sourceKeystore = path.join(projectRoot, 'signing', 'debug.keystore');
-const destKeystore = path.join(androidDir, 'app', 'debug.keystore');
-if (fs.existsSync(sourceKeystore)) {
-  fs.mkdirSync(path.dirname(destKeystore), { recursive: true });
-  fs.copyFileSync(sourceKeystore, destKeystore);
+// 1. Copy persistent release and debug keystores for consistent signing across all builds
+const sourceReleaseKeystore = path.join(projectRoot, 'signing', 'release.keystore');
+const sourceDebugKeystore = path.join(projectRoot, 'signing', 'debug.keystore');
+const destReleaseKeystore = path.join(androidDir, 'app', 'release.keystore');
+const destDebugKeystore = path.join(androidDir, 'app', 'debug.keystore');
+
+if (fs.existsSync(sourceReleaseKeystore)) {
+  fs.mkdirSync(path.dirname(destReleaseKeystore), { recursive: true });
+  fs.copyFileSync(sourceReleaseKeystore, destReleaseKeystore);
+  console.log('Copied persistent signing/release.keystore to android/app/release.keystore');
+}
+if (fs.existsSync(sourceDebugKeystore)) {
+  fs.mkdirSync(path.dirname(destDebugKeystore), { recursive: true });
+  fs.copyFileSync(sourceDebugKeystore, destDebugKeystore);
   console.log('Copied persistent signing/debug.keystore to android/app/debug.keystore');
 }
 
@@ -49,32 +57,43 @@ if (fs.existsSync(variablesGradle)) {
 if (fs.existsSync(appBuildGradle)) {
   let b = safeRead(appBuildGradle);
   if (b) {
-    // Ensure signingConfigs has debug keystore configured
-    if (!/signingConfigs\s*\{/.test(b)) {
-      const signingConfigBlock = `
-    signingConfigs {
+    // Cleanly replace any existing signingConfigs and buildTypes with the regulatory production signing block
+    const signingAndBuildTypesBlock = `    signingConfigs {
+        release {
+            storeFile file('release.keystore')
+            storePassword 'expensediary'
+            keyAlias 'expensediary'
+            keyPassword 'expensediary'
+            v1SigningEnabled true
+            v2SigningEnabled true
+        }
         debug {
-            storeFile file('debug.keystore')
-            storePassword 'android'
-            keyAlias 'androiddebugkey'
-            keyPassword 'android'
+            storeFile file('release.keystore')
+            storePassword 'expensediary'
+            keyAlias 'expensediary'
+            keyPassword 'expensediary'
+            v1SigningEnabled true
+            v2SigningEnabled true
         }
     }
-`;
-      b = b.replace(/buildTypes\s*\{/, signingConfigBlock + '\n    buildTypes {');
-    }
+    buildTypes {
+        debug {
+            signingConfig signingConfigs.debug
+        }
+        release {
+            signingConfig signingConfigs.release
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+        }
+    }`;
 
-    // Ensure release uses signingConfigs.debug if no key.properties
-    const keyPropsPath = path.join(projectRoot, 'key.properties');
-    if (!fs.existsSync(keyPropsPath)) {
-      b = b.replace(/release\s*\{([\s\S]*?)\n\s*\}/, (m, inner) => {
-        if (/signingConfig/.test(inner)) return m;
-        return `release {${inner}\n            signingConfig signingConfigs.debug\n        }`;
-      });
-    }
+    // Remove old signingConfigs if present
+    b = b.replace(/signingConfigs\s*\{[\s\S]*?buildTypes\s*\{/, 'buildTypes {');
+    // Replace buildTypes with both signingConfigs and buildTypes
+    b = b.replace(/buildTypes\s*\{[\s\S]*?\n\s*\}\s*\}/, signingAndBuildTypesBlock);
 
     safeWrite(appBuildGradle, b);
-    console.log('Patched android/app/build.gradle with persistent keystore');
+    console.log('Patched android/app/build.gradle with regulatory release signingConfigs');
   }
 }
 
@@ -308,15 +327,19 @@ public class NativeBridgePlugin extends Plugin {
             JSObject res = new JSObject();
             res.put("hasPermission", false);
             res.put("messages", messages);
+            res.put("count", 0);
             call.resolve(res);
             return;
         }
 
+        Cursor cursor = null;
         try {
             Uri inboxUri = Uri.parse("content://sms/inbox");
-            long lookback = System.currentTimeMillis() - (48 * 60 * 60 * 1000);
+            int days = call.getInt("days", 90);
+            long lookback = System.currentTimeMillis() - ((long) days * 24L * 60L * 60L * 1000L);
 
-            Cursor cursor = getContext().getContentResolver().query(
+            // Primary query with date filter
+            cursor = getContext().getContentResolver().query(
                 inboxUri,
                 new String[]{"_id", "address", "body", "date"},
                 "date > ?",
@@ -324,8 +347,21 @@ public class NativeBridgePlugin extends Plugin {
                 "date DESC"
             );
 
+            // Fallback: if date filter returned 0 (some vendor ROMs store date differently), query recent 200 messages
+            if (cursor == null || cursor.getCount() == 0) {
+                if (cursor != null) cursor.close();
+                cursor = getContext().getContentResolver().query(
+                    inboxUri,
+                    new String[]{"_id", "address", "body", "date"},
+                    null,
+                    null,
+                    "date DESC"
+                );
+            }
+
             if (cursor != null) {
-                while (cursor.moveToNext()) {
+                int count = 0;
+                while (cursor.moveToNext() && count < 300) {
                     String id = cursor.getString(0);
                     String address = cursor.getString(1);
                     String body = cursor.getString(2);
@@ -334,21 +370,26 @@ public class NativeBridgePlugin extends Plugin {
                     if (body != null && isFinancialSMS(address, body)) {
                         JSObject sms = new JSObject();
                         sms.put("id", id);
-                        sms.put("address", address);
+                        sms.put("address", address != null ? address : "");
                         sms.put("body", body);
                         sms.put("timestamp", date);
                         messages.put(sms);
+                        count++;
                     }
                 }
-                cursor.close();
             }
 
             JSObject res = new JSObject();
             res.put("hasPermission", true);
             res.put("messages", messages);
+            res.put("count", messages.length());
             call.resolve(res);
         } catch (Exception e) {
             call.reject("Error reading SMS: " + e.getMessage());
+        } finally {
+            if (cursor != null && !cursor.isClosed()) {
+                cursor.close();
+            }
         }
     }
 
@@ -528,10 +569,43 @@ public class NativeBridgePlugin extends Plugin {
     @PluginMethod
     public void printDocument(PluginCall call) {
         String jobName = call.getString("jobName", "Expense_Report_" + System.currentTimeMillis());
+        String htmlContent = call.getString("htmlContent", "");
+
         getActivity().runOnUiThread(() -> {
             try {
                 PrintManager printManager = (PrintManager) getContext().getSystemService(Context.PRINT_SERVICE);
-                if (printManager != null && getBridge() != null && getBridge().getWebView() != null) {
+                if (printManager == null) {
+                    JSObject res = new JSObject();
+                    res.put("success", false);
+                    res.put("error", "PrintManager not available");
+                    call.resolve(res);
+                    return;
+                }
+
+                if (htmlContent != null && !htmlContent.trim().isEmpty()) {
+                    // Create an off-screen WebView to render pristine printable HTML
+                    android.webkit.WebView printWebView = new android.webkit.WebView(getContext());
+                    printWebView.setWebViewClient(new android.webkit.WebViewClient() {
+                        @Override
+                        public void onPageFinished(android.webkit.WebView view, String url) {
+                            try {
+                                PrintDocumentAdapter printAdapter;
+                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                                    printAdapter = view.createPrintDocumentAdapter(jobName);
+                                } else {
+                                    printAdapter = view.createPrintDocumentAdapter();
+                                }
+                                printManager.print(jobName, printAdapter, new PrintAttributes.Builder().build());
+                                JSObject res = new JSObject();
+                                res.put("success", true);
+                                call.resolve(res);
+                            } catch (Exception pe) {
+                                call.reject("Print page finish error: " + pe.getMessage());
+                            }
+                        }
+                    });
+                    printWebView.loadDataWithBaseURL(null, htmlContent, "text/html", "UTF-8", null);
+                } else if (getBridge() != null && getBridge().getWebView() != null) {
                     PrintDocumentAdapter printAdapter;
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
                         printAdapter = getBridge().getWebView().createPrintDocumentAdapter(jobName);
@@ -545,7 +619,7 @@ public class NativeBridgePlugin extends Plugin {
                 } else {
                     JSObject res = new JSObject();
                     res.put("success", false);
-                    res.put("error", "PrintManager not available");
+                    res.put("error", "No WebView available to print");
                     call.resolve(res);
                 }
             } catch (Exception e) {
@@ -700,10 +774,67 @@ public class NativeBridgePlugin extends Plugin {
     }
 
     private boolean isFinancialSMS(String sender, String body) {
+        if (body == null || body.trim().length() < 8) return false;
         String lower = body.toLowerCase();
-        boolean hasAmount = lower.contains("rs.") || lower.contains("rs ") || lower.contains("inr") || lower.matches(".*\\\\b\\\\d+(\\\\.\\\\d{1,2})?\\\\b.*");
-        boolean hasAction = lower.contains("debited") || lower.contains("credited") || lower.contains("spent") || lower.contains("sent") || lower.contains("received") || lower.contains("paid") || lower.contains("transferred");
-        return hasAmount && hasAction;
+
+        // 1. Must contain at least one digit
+        boolean hasDigit = false;
+        for (int i = 0; i < body.length(); i++) {
+            if (Character.isDigit(body.charAt(i))) {
+                hasDigit = true;
+                break;
+            }
+        }
+        if (!hasDigit) return false;
+
+        // 2. Currency indicator (Supports ₹, Rs., INR, USD, $)
+        boolean hasCurrency = body.contains("₹") ||
+                              lower.contains("rs.") ||
+                              lower.contains("rs ") ||
+                              lower.contains("rs:") ||
+                              lower.contains("inr") ||
+                              lower.contains("usd") ||
+                              body.contains("$");
+
+        // 3. Financial action keywords
+        boolean hasAction = lower.contains("debit") ||
+                            lower.contains("credit") ||
+                            lower.contains("spent") ||
+                            lower.contains("sent") ||
+                            lower.contains("received") ||
+                            lower.contains("paid") ||
+                            lower.contains("pay") ||
+                            lower.contains("transferred") ||
+                            lower.contains("withdrawn") ||
+                            lower.contains("purchase") ||
+                            lower.contains("refund") ||
+                            lower.contains("charge") ||
+                            lower.contains("txn") ||
+                            lower.contains("upi") ||
+                            lower.contains("vpa") ||
+                            lower.contains("atm") ||
+                            lower.contains("bal") ||
+                            lower.contains("avl") ||
+                            lower.contains("a/c") ||
+                            lower.contains("acct") ||
+                            lower.contains("dr.") ||
+                            lower.contains("cr.");
+
+        // 4. Known financial or Indian bank senders
+        boolean isBankSender = false;
+        if (sender != null) {
+            String s = sender.toUpperCase();
+            isBankSender = s.contains("SBI") || s.contains("HDFC") || s.contains("ICICI") ||
+                           s.contains("AXIS") || s.contains("KOTAK") || s.contains("PAYTM") ||
+                           s.contains("BOB") || s.contains("PNB") || s.contains("YES") ||
+                           s.contains("INDUS") || s.contains("UNION") || s.contains("CANARA") ||
+                           s.contains("IDFC") || s.contains("IOB") || s.contains("CENT") ||
+                           s.contains("FEDERAL") || s.contains("UPI") || s.contains("BHIM") ||
+                           s.contains("GPAY") || s.contains("PHONPE") || s.contains("ALERT") ||
+                           s.contains("BANK");
+        }
+
+        return (hasCurrency && hasAction) || (isBankSender && hasAction) || (isBankSender && hasCurrency);
     }
 }
 `;
