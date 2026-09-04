@@ -27,6 +27,7 @@ export interface ScannedCandidate {
   paymentMode: string;
   date: string;
   time: string;
+  bankOrSource?: string;
   evidence: string;
   confidence: number;
 }
@@ -222,6 +223,12 @@ export const SmartTransactionScanModal: React.FC<SmartTransactionScanModalProps>
                   </div>
 
                   <div className="flex flex-wrap items-center gap-2 mt-1 text-[11px] text-stone-500">
+                    {candidate.bankOrSource && (
+                      <span className="flex items-center gap-1 font-bold text-emerald-800 bg-emerald-100/80 px-2 py-0.5 rounded-md">
+                        <Building2 className="w-3 h-3 text-emerald-700" />
+                        {candidate.bankOrSource}
+                      </span>
+                    )}
                     <span className="flex items-center gap-1 font-mono">
                       <Calendar className="w-3 h-3 text-stone-400" />
                       {candidate.date}

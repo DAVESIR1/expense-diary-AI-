@@ -104,6 +104,7 @@ fs.mkdirSync(javaSrcDir, { recursive: true });
 const nativePluginCode = `package com.expensediary.ai;
 
 import android.Manifest;
+import android.app.AlarmManager;
 import android.app.AppOpsManager;
 import android.app.KeyguardManager;
 import android.app.NotificationChannel;
@@ -836,6 +837,133 @@ public class NativeBridgePlugin extends Plugin {
 
         return (hasCurrency && hasAction) || (isBankSender && hasAction) || (isBankSender && hasCurrency);
     }
+
+    @PluginMethod
+    public void scheduleDailyReminder(PluginCall call) {
+        int hour = call.getInt("hour", 20);
+        int minute = call.getInt("minute", 0);
+        String title = call.getString("title", "Expense Diary");
+        String body = call.getString("body", "Remember to add today's expenses and income!");
+
+        Context context = getContext();
+        AlarmManager am = (AlarmManager) context.getSystemService(Context.ALARM_SERVICE);
+        if (am == null) {
+            call.reject("AlarmManager not available");
+            return;
+        }
+
+        Intent intent = new Intent(context, ExpenseReminderReceiver.class);
+        intent.setAction(ExpenseReminderReceiver.ACTION_REMINDER);
+        intent.putExtra("title", title);
+        intent.putExtra("body", body);
+
+        PendingIntent pi = PendingIntent.getBroadcast(
+            context,
+            9901,
+            intent,
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.M ? PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE : PendingIntent.FLAG_UPDATE_CURRENT
+        );
+
+        java.util.Calendar cal = java.util.Calendar.getInstance();
+        cal.set(java.util.Calendar.HOUR_OF_DAY, hour);
+        cal.set(java.util.Calendar.MINUTE, minute);
+        cal.set(java.util.Calendar.SECOND, 0);
+        cal.set(java.util.Calendar.MILLISECOND, 0);
+
+        if (cal.getTimeInMillis() <= System.currentTimeMillis()) {
+            cal.add(java.util.Calendar.DAY_OF_YEAR, 1);
+        }
+
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, cal.getTimeInMillis(), pi);
+            } else {
+                am.setExact(AlarmManager.RTC_WAKEUP, cal.getTimeInMillis(), pi);
+            }
+            JSObject res = new JSObject();
+            res.put("success", true);
+            res.put("scheduledTime", cal.getTimeInMillis());
+            call.resolve(res);
+        } catch (SecurityException se) {
+            am.set(AlarmManager.RTC_WAKEUP, cal.getTimeInMillis(), pi);
+            JSObject res = new JSObject();
+            res.put("success", true);
+            res.put("scheduledTime", cal.getTimeInMillis());
+            call.resolve(res);
+        } catch (Exception e) {
+            call.reject("Failed to schedule alarm: " + e.getMessage());
+        }
+    }
+
+    @PluginMethod
+    public void cancelDailyReminder(PluginCall call) {
+        Context context = getContext();
+        AlarmManager am = (AlarmManager) context.getSystemService(Context.ALARM_SERVICE);
+        if (am != null) {
+            Intent intent = new Intent(context, ExpenseReminderReceiver.class);
+            intent.setAction(ExpenseReminderReceiver.ACTION_REMINDER);
+            PendingIntent pi = PendingIntent.getBroadcast(
+                context,
+                9901,
+                intent,
+                Build.VERSION.SDK_INT >= Build.VERSION_CODES.M ? PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE : PendingIntent.FLAG_UPDATE_CURRENT
+            );
+            am.cancel(pi);
+        }
+        JSObject res = new JSObject();
+        res.put("success", true);
+        call.resolve(res);
+    }
+
+    @PluginMethod
+    public void isNotificationListenerEnabled(PluginCall call) {
+        Context context = getContext();
+        String pkgName = context.getPackageName();
+        String flat = Settings.Secure.getString(context.getContentResolver(), "enabled_notification_listeners");
+        boolean enabled = flat != null && flat.contains(pkgName);
+        JSObject res = new JSObject();
+        res.put("enabled", enabled);
+        call.resolve(res);
+    }
+
+    @PluginMethod
+    public void openNotificationListenerSettings(PluginCall call) {
+        try {
+            Intent intent = new Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS);
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            getContext().startActivity(intent);
+            JSObject res = new JSObject();
+            res.put("success", true);
+            call.resolve(res);
+        } catch (Exception e) {
+            call.reject("Failed to open notification listener settings: " + e.getMessage());
+        }
+    }
+
+    @PluginMethod
+    public void getRecentFinancialNotifications(PluginCall call) {
+        try {
+            String json = FinancialNotificationListener.getRecentSavedNotifications(getContext());
+            org.json.JSONArray arr = new org.json.JSONArray(json);
+            JSArray outArr = new JSArray();
+            for (int i = 0; i < arr.length(); i++) {
+                org.json.JSONObject obj = arr.getJSONObject(i);
+                JSObject j = new JSObject();
+                j.put("packageName", obj.optString("packageName"));
+                j.put("title", obj.optString("title"));
+                j.put("text", obj.optString("text"));
+                j.put("timestamp", obj.optLong("timestamp"));
+                outArr.put(j);
+            }
+            JSObject res = new JSObject();
+            res.put("notifications", outArr);
+            call.resolve(res);
+        } catch (Exception e) {
+            JSObject res = new JSObject();
+            res.put("notifications", new JSArray());
+            call.resolve(res);
+        }
+    }
 }
 `;
 
@@ -874,6 +1002,173 @@ public class MainActivity extends BridgeActivity {
 safeWrite(mainActivityPath, mainActivityCode);
 console.log('Injected MainActivity.java with NativeBridgePlugin and DownloadListener');
 
+// 4b. Write ExpenseReminderReceiver.java
+const receiverCode = `package com.expensediary.ai;
+
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
+import android.app.PendingIntent;
+import android.content.BroadcastReceiver;
+import android.content.Context;
+import android.content.Intent;
+import android.os.Build;
+import androidx.core.app.NotificationCompat;
+
+public class ExpenseReminderReceiver extends BroadcastReceiver {
+    public static final String ACTION_REMINDER = "com.expensediary.ai.ALARM_EXPENSE_REMINDER";
+    public static final String CHANNEL_ID = "expense_diary_reminder_channel";
+
+    @Override
+    public void onReceive(Context context, Intent intent) {
+        String title = intent.getStringExtra("title");
+        if (title == null || title.isEmpty()) {
+            title = "Expense Diary";
+        }
+        String body = intent.getStringExtra("body");
+        if (body == null || body.isEmpty()) {
+            body = "Don't forget to record your daily expenses and income!";
+        }
+
+        NotificationManager nm = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
+        if (nm == null) return;
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            NotificationChannel channel = new NotificationChannel(
+                CHANNEL_ID,
+                "Daily Expense Reminders",
+                NotificationManager.IMPORTANCE_HIGH
+            );
+            channel.setDescription("Daily alarms and reminders to log expenses");
+            channel.enableVibration(true);
+            nm.createNotificationChannel(channel);
+        }
+
+        Intent openAppIntent = context.getPackageManager().getLaunchIntentForPackage(context.getPackageName());
+        if (openAppIntent == null) {
+            openAppIntent = new Intent(context, MainActivity.class);
+        }
+        openAppIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+
+        PendingIntent pendingIntent = PendingIntent.getActivity(
+            context,
+            9901,
+            openAppIntent,
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.M ? PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE : PendingIntent.FLAG_UPDATE_CURRENT
+        );
+
+        int iconRes = context.getResources().getIdentifier("ic_notification", "drawable", context.getPackageName());
+        if (iconRes == 0) {
+            iconRes = context.getApplicationInfo().icon;
+        }
+
+        NotificationCompat.Builder builder = new NotificationCompat.Builder(context, CHANNEL_ID)
+            .setSmallIcon(iconRes)
+            .setContentTitle(title)
+            .setContentText(body)
+            .setStyle(new NotificationCompat.BigTextStyle().bigText(body))
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setAutoCancel(true)
+            .setContentIntent(pendingIntent);
+
+        nm.notify(8801, builder.build());
+    }
+}
+`;
+safeWrite(path.join(javaSrcDir, 'ExpenseReminderReceiver.java'), receiverCode);
+console.log('Injected ExpenseReminderReceiver.java');
+
+// 4c. Write FinancialNotificationListener.java
+const listenerCode = `package com.expensediary.ai;
+
+import android.content.Context;
+import android.content.SharedPreferences;
+import android.os.Bundle;
+import android.service.notification.NotificationListenerService;
+import android.service.notification.StatusBarNotification;
+import org.json.JSONArray;
+import org.json.JSONObject;
+
+public class FinancialNotificationListener extends NotificationListenerService {
+    private static final String PREFS_NAME = "expense_diary_notifications";
+    private static final String KEY_NOTIFS = "recent_notifs";
+    private static final int MAX_SAVED = 50;
+
+    @Override
+    public void onNotificationPosted(StatusBarNotification sbn) {
+        if (sbn == null || sbn.getNotification() == null) return;
+
+        String pkg = sbn.getPackageName();
+        if (pkg == null) return;
+        String lowerPkg = pkg.toLowerCase();
+
+        boolean isFinancial = lowerPkg.contains("paisa") ||
+                              lowerPkg.contains("paytm") ||
+                              lowerPkg.contains("phonepe") ||
+                              lowerPkg.contains("bhim") ||
+                              lowerPkg.contains("cred") ||
+                              lowerPkg.contains("hdfc") ||
+                              lowerPkg.contains("sbi") ||
+                              lowerPkg.contains("icici") ||
+                              lowerPkg.contains("axis") ||
+                              lowerPkg.contains("kotak") ||
+                              lowerPkg.contains("pnb") ||
+                              lowerPkg.contains("baroda") ||
+                              lowerPkg.contains("amazon") ||
+                              lowerPkg.contains("bank");
+
+        Bundle extras = sbn.getNotification().extras;
+        if (extras == null) return;
+
+        CharSequence titleCs = extras.getCharSequence("android.title");
+        CharSequence textCs = extras.getCharSequence("android.text");
+        String title = titleCs != null ? titleCs.toString() : "";
+        String text = textCs != null ? textCs.toString() : "";
+
+        String lowerText = (title + " " + text).toLowerCase();
+        boolean hasFinancialKeywords = lowerText.contains("rs.") ||
+                                       lowerText.contains("inr") ||
+                                       lowerText.contains("debited") ||
+                                       lowerText.contains("credited") ||
+                                       lowerText.contains("paid") ||
+                                       lowerText.contains("sent") ||
+                                       lowerText.contains("spent");
+
+        if (isFinancial || hasFinancialKeywords) {
+            saveFinancialNotification(this, pkg, title, text, sbn.getPostTime());
+        }
+    }
+
+    private synchronized static void saveFinancialNotification(Context context, String pkg, String title, String text, long postTime) {
+        try {
+            SharedPreferences prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+            String existing = prefs.getString(KEY_NOTIFS, "[]");
+            JSONArray arr = new JSONArray(existing);
+
+            JSONObject item = new JSONObject();
+            item.put("packageName", pkg);
+            item.put("title", title);
+            item.put("text", text);
+            item.put("timestamp", postTime);
+
+            JSONArray updated = new JSONArray();
+            updated.put(item);
+            for (int i = 0; i < arr.length() && updated.length() < MAX_SAVED; i++) {
+                updated.put(arr.getJSONObject(i));
+            }
+
+            prefs.edit().putString(KEY_NOTIFS, updated.toString()).apply();
+        } catch (Exception ignored) {}
+    }
+
+    public static String getRecentSavedNotifications(Context context) {
+        SharedPreferences prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+        return prefs.getString(KEY_NOTIFS, "[]");
+    }
+}
+`;
+safeWrite(path.join(javaSrcDir, 'FinancialNotificationListener.java'), listenerCode);
+console.log('Injected FinancialNotificationListener.java');
+
 // Ensure res/xml/file_paths.xml exists for FileProvider
 const resXmlDir = path.join(androidDir, 'app', 'src', 'main', 'res', 'xml');
 fs.mkdirSync(resXmlDir, { recursive: true });
@@ -902,13 +1197,15 @@ if (fs.existsSync(manifestPath)) {
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.USE_BIOMETRIC" />
     <uses-permission android:name="android.permission.USE_FINGERPRINT" />
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+    <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
     <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS" tools:ignore="ProtectedPermissions" />
 `;
     // Clean old permissions if needed
-    m = m.replace(/<uses-permission\s+android:name="android\.permission\.(RECEIVE_SMS|READ_SMS|POST_NOTIFICATIONS|VIBRATE|WAKE_LOCK|USE_BIOMETRIC|USE_FINGERPRINT|PACKAGE_USAGE_STATS)"[^>]*\/>/g, '');
+    m = m.replace(/<uses-permission\s+android:name="android\.permission\.(RECEIVE_SMS|READ_SMS|POST_NOTIFICATIONS|VIBRATE|WAKE_LOCK|USE_BIOMETRIC|USE_FINGERPRINT|SCHEDULE_EXACT_ALARM|USE_EXACT_ALARM|PACKAGE_USAGE_STATS)"[^>]*\/>/g, '');
     m = m.replace('<application', permissions.trim() + '\n    <application');
 
-    // Add FileProvider to application if not present
+    // Add FileProvider, Reminder Receiver, and Notification Listener to application if not present
     if (!/androidx\.core\.content\.FileProvider/.test(m)) {
       const provider = `
         <provider
@@ -924,8 +1221,37 @@ if (fs.existsSync(manifestPath)) {
       m = m.replace('</application>', provider + '\n    </application>');
     }
 
+    if (!/ExpenseReminderReceiver/.test(m)) {
+      const receiverEntry = `
+        <receiver
+            android:name=".ExpenseReminderReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.expensediary.ai.ALARM_EXPENSE_REMINDER" />
+            </intent-filter>
+        </receiver>
+      `;
+      m = m.replace('</application>', receiverEntry + '\n    </application>');
+    }
+
+    if (!/FinancialNotificationListener/.test(m)) {
+      const serviceEntry = `
+        <service
+            android:name=".FinancialNotificationListener"
+            android:label="Expense Diary Financial Listener"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
+      `;
+      m = m.replace('</application>', serviceEntry + '\n    </application>');
+    }
+
+    m = m.replace(/\n\s*\n\s*\n+/g, '\n\n');
     safeWrite(manifestPath, m);
-    console.log('Patched AndroidManifest.xml with all required native permissions and FileProvider');
+    console.log('Patched AndroidManifest.xml with all required native permissions, FileProvider, Receiver, and Service');
   }
 }
 

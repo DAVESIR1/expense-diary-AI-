@@ -32,16 +32,22 @@ export const AuthLockScreen: React.FC<AuthLockScreenProps> = ({
   const [forgotError, setForgotError] = useState<string | null>(null);
 
   const isGu = currentLang === 'gu';
+  const hasBiometrics = !!securityConfig.biometricsEnabled;
+
+  // If biometrics enabled, default to biometric screen, otherwise pin screen
+  const [authMode, setAuthMode] = useState<'biometric' | 'pin'>(
+    hasBiometrics ? 'biometric' : 'pin'
+  );
 
   // Automatically prompt for fingerprint/biometrics on screen mount if enabled
   useEffect(() => {
-    if (securityConfig.biometricsEnabled) {
+    if (hasBiometrics && authMode === 'biometric') {
       const timer = setTimeout(() => {
         handleBiometricClick();
       }, 350);
       return () => clearTimeout(timer);
     }
-  }, []);
+  }, [hasBiometrics]);
 
   const handleKeyClick = (digit: string) => {
     if (pin.length < 4) {
@@ -176,92 +182,151 @@ export const AuthLockScreen: React.FC<AuthLockScreenProps> = ({
       {/* Top Brand & Security Icon */}
       <div className="flex flex-col items-center mt-6">
         <div className="w-16 h-16 rounded-3xl bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center text-emerald-400 mb-4 shadow-lg shadow-emerald-950/50">
-          <Lock className="w-8 h-8 stroke-[2.2]" />
+          {authMode === 'biometric' ? (
+            <Fingerprint className="w-9 h-9 stroke-[2.2] animate-pulse" />
+          ) : (
+            <Lock className="w-8 h-8 stroke-[2.2]" />
+          )}
         </div>
         <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-white">
           {t.appName}
         </h1>
         <p className="text-xs sm:text-sm text-stone-400 mt-1">
-          {t.enterPin}
+          {authMode === 'biometric'
+            ? (isGu ? 'ફિંગરપ્રિન્ટ દ્વારા અનલૉક કરો' : 'Unlock with Fingerprint')
+            : t.enterPin}
         </p>
       </div>
 
-      {/* PIN Dots Display */}
-      <div className="flex flex-col items-center my-4">
-        <div className="flex items-center gap-4 h-10">
-          {[0, 1, 2, 3].map((idx) => {
-            const filled = pin.length > idx;
-            return (
-              <div
-                key={idx}
-                className={`w-4 h-4 rounded-full transition-all duration-200 ${
-                  filled
-                    ? 'bg-emerald-400 scale-110 shadow-md shadow-emerald-400/50'
-                    : 'bg-stone-700 border border-stone-600'
-                }`}
-              />
-            );
-          })}
-        </div>
-        {errorMsg && (
-          <div className="text-xs text-rose-400 font-medium mt-3 flex items-center gap-1.5 animate-shake">
-            <AlertCircle className="w-3.5 h-3.5" />
-            <span>{errorMsg}</span>
-          </div>
-        )}
-      </div>
+      {authMode === 'biometric' ? (
+        /* Biometric Default View */
+        <div className="flex-1 flex flex-col items-center justify-center my-6 max-w-xs w-full space-y-6">
+          <button
+            id="biometric-trigger-center-btn"
+            onClick={handleBiometricClick}
+            className="w-28 h-28 sm:w-32 sm:h-32 rounded-full bg-stone-800 border-2 border-emerald-500/40 hover:border-emerald-400 flex flex-col items-center justify-center text-emerald-400 shadow-xl shadow-emerald-950/60 hover:scale-105 active:scale-95 transition-all cursor-pointer relative group"
+            title={isGu ? 'ફિંગરપ્રિન્ટ સ્કેન કરવા ટૅપ કરો' : 'Tap to scan fingerprint'}
+          >
+            <span className="absolute inset-0 rounded-full bg-emerald-500/10 animate-ping pointer-events-none" />
+            <Fingerprint className="w-14 h-14 sm:w-16 sm:h-16 stroke-[2] group-hover:scale-110 transition-transform" />
+          </button>
 
-      {/* Numeric Keypad */}
-      <div className="w-full max-w-xs space-y-3 sm:space-y-4 mb-4">
-        {[
-          ['1', '2', '3'],
-          ['4', '5', '6'],
-          ['7', '8', '9'],
-        ].map((row, rIdx) => (
-          <div key={rIdx} className="grid grid-cols-3 gap-3 sm:gap-4">
-            {row.map((digit) => (
+          <div className="text-center space-y-1">
+            <p className="text-sm font-semibold text-stone-200">
+              {isGu ? 'સેન્સર પર આંગળી મૂકો' : 'Touch fingerprint sensor'}
+            </p>
+            <p className="text-xs text-stone-400">
+              {isGu
+                ? 'અથવા ફરી ચકાસવા માટે ઉપર ટૅપ કરો'
+                : 'or tap the icon above to re-scan'}
+            </p>
+          </div>
+
+          {errorMsg && (
+            <div className="text-xs text-rose-400 font-medium px-4 py-2 rounded-xl bg-rose-500/10 border border-rose-500/20 flex items-center gap-1.5 animate-shake text-center">
+              <AlertCircle className="w-4 h-4 shrink-0" />
+              <span>{errorMsg}</span>
+            </div>
+          )}
+
+          <div className="pt-4 w-full flex flex-col items-center gap-3">
+            <button
+              id="switch-to-pin-btn"
+              onClick={() => {
+                setAuthMode('pin');
+                setErrorMsg(null);
+              }}
+              className="w-full py-3 px-4 rounded-2xl bg-stone-800 hover:bg-stone-700 border border-stone-700/70 text-xs font-bold text-white transition flex items-center justify-center gap-2 cursor-pointer shadow-xs active:scale-98"
+            >
+              <KeyRound className="w-4 h-4 text-emerald-400" />
+              <span>{isGu ? 'પિન (PIN) દાખલ કરીને અનલૉક કરો' : 'Use PIN Instead'}</span>
+            </button>
+          </div>
+        </div>
+      ) : (
+        /* PIN Keypad View */
+        <>
+          {/* PIN Dots Display */}
+          <div className="flex flex-col items-center my-4">
+            <div className="flex items-center gap-4 h-10">
+              {[0, 1, 2, 3].map((idx) => {
+                const filled = pin.length > idx;
+                return (
+                  <div
+                    key={idx}
+                    className={`w-4 h-4 rounded-full transition-all duration-200 ${
+                      filled
+                        ? 'bg-emerald-400 scale-110 shadow-md shadow-emerald-400/50'
+                        : 'bg-stone-700 border border-stone-600'
+                    }`}
+                  />
+                );
+              })}
+            </div>
+            {errorMsg && (
+              <div className="text-xs text-rose-400 font-medium mt-3 flex items-center gap-1.5 animate-shake">
+                <AlertCircle className="w-3.5 h-3.5" />
+                <span>{errorMsg}</span>
+              </div>
+            )}
+          </div>
+
+          {/* Numeric Keypad */}
+          <div className="w-full max-w-xs space-y-3 sm:space-y-4 mb-4">
+            {[
+              ['1', '2', '3'],
+              ['4', '5', '6'],
+              ['7', '8', '9'],
+            ].map((row, rIdx) => (
+              <div key={rIdx} className="grid grid-cols-3 gap-3 sm:gap-4">
+                {row.map((digit) => (
+                  <button
+                    key={digit}
+                    onClick={() => handleKeyClick(digit)}
+                    disabled={isVerifying}
+                    className="h-14 sm:h-16 rounded-2xl bg-stone-800 hover:bg-stone-700 active:bg-stone-600 text-xl font-bold transition flex items-center justify-center cursor-pointer active:scale-95 shadow-xs border border-stone-700/50"
+                  >
+                    {digit}
+                  </button>
+                ))}
+              </div>
+            ))}
+
+            <div className="grid grid-cols-3 gap-3 sm:gap-4">
+              {/* Biometrics button (Switch back or trigger) */}
               <button
-                key={digit}
-                onClick={() => handleKeyClick(digit)}
+                id="fingerprint-unlock-btn"
+                onClick={() => {
+                  setAuthMode('biometric');
+                  handleBiometricClick();
+                }}
+                className="h-14 sm:h-16 rounded-2xl bg-stone-800 hover:bg-stone-700 active:bg-stone-600 text-emerald-400 flex items-center justify-center transition cursor-pointer border border-stone-700/50 active:scale-95 shadow-xs"
+                title={isGu ? 'ફિંગરપ્રિન્ટ સ્ક્રીન પર જાઓ' : 'Switch to Fingerprint Unlock'}
+              >
+                <Fingerprint className="w-6 h-6 stroke-[2.2]" />
+              </button>
+
+              {/* 0 digit */}
+              <button
+                onClick={() => handleKeyClick('0')}
                 disabled={isVerifying}
                 className="h-14 sm:h-16 rounded-2xl bg-stone-800 hover:bg-stone-700 active:bg-stone-600 text-xl font-bold transition flex items-center justify-center cursor-pointer active:scale-95 shadow-xs border border-stone-700/50"
               >
-                {digit}
+                0
               </button>
-            ))}
+
+              {/* Delete button */}
+              <button
+                onClick={handleDelete}
+                disabled={pin.length === 0}
+                className="h-14 sm:h-16 rounded-2xl bg-stone-800 hover:bg-stone-700 active:bg-stone-600 text-xs font-semibold text-stone-300 transition flex items-center justify-center cursor-pointer active:scale-95 shadow-xs border border-stone-700/50"
+              >
+                {isGu ? 'કાઢી નાખો' : 'DEL'}
+              </button>
+            </div>
           </div>
-        ))}
-
-        <div className="grid grid-cols-3 gap-3 sm:gap-4">
-          {/* Biometrics button (Fingerprint for Main App Unlock) */}
-          <button
-            id="fingerprint-unlock-btn"
-            onClick={handleBiometricClick}
-            className="h-14 sm:h-16 rounded-2xl bg-stone-800 hover:bg-stone-700 active:bg-stone-600 text-emerald-400 flex items-center justify-center transition cursor-pointer border border-stone-700/50 active:scale-95 shadow-xs"
-            title={isGu ? 'મેઈન એપ ફિંગરપ્રિન્ટ વડે અનલૉક કરો' : 'Unlock Main App with Fingerprint'}
-          >
-            <Fingerprint className="w-6 h-6 stroke-[2.2]" />
-          </button>
-
-          {/* 0 digit */}
-          <button
-            onClick={() => handleKeyClick('0')}
-            disabled={isVerifying}
-            className="h-14 sm:h-16 rounded-2xl bg-stone-800 hover:bg-stone-700 active:bg-stone-600 text-xl font-bold transition flex items-center justify-center cursor-pointer active:scale-95 shadow-xs border border-stone-700/50"
-          >
-            0
-          </button>
-
-          {/* Delete button */}
-          <button
-            onClick={handleDelete}
-            disabled={pin.length === 0}
-            className="h-14 sm:h-16 rounded-2xl bg-stone-800 hover:bg-stone-700 active:bg-stone-600 text-xs font-semibold text-stone-300 transition flex items-center justify-center cursor-pointer active:scale-95 shadow-xs border border-stone-700/50"
-          >
-            {isGu ? 'કાઢી નાખો' : 'DEL'}
-          </button>
-        </div>
-      </div>
+        </>
+      )}
 
       {/* Forgot PIN Action */}
       <div className="mb-2">

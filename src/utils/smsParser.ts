@@ -11,15 +11,115 @@ export interface ParsedExpenseMessage {
   accountInfo?: string;
   date: string;
   time: string;
+  bankOrSource?: string;
   evidence: string;
   evidenceSource: 'sms' | 'notification';
   confidence: number;
 }
 
+export interface ParseOptions {
+  timestamp?: number;
+  sender?: string;
+}
+
+const MONTH_MAP: Record<string, string> = {
+  jan: '01', feb: '02', mar: '03', apr: '04', may: '05', jun: '06',
+  jul: '07', aug: '08', sep: '09', oct: '10', nov: '11', dec: '12'
+};
+
+export function extractDateAndTime(text: string, timestamp?: number): { date: string; time: string } {
+  // Default from metadata timestamp if provided, else current date
+  const fallbackDate = timestamp ? new Date(timestamp) : new Date();
+  let date = fallbackDate.toISOString().split('T')[0];
+  let time = fallbackDate.toTimeString().substring(0, 5);
+
+  // 1. Check for named month: e.g. "04-Sep-2026", "4 Sep 26", "04-Sep-24", "dated 04Sep24"
+  const namedMonthMatch = text.match(
+    /(?:on|dated)?\s*(\d{1,2})[- ](jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*[- ](\d{2,4})/i
+  );
+  if (namedMonthMatch) {
+    const day = namedMonthMatch[1].padStart(2, '0');
+    const month = MONTH_MAP[namedMonthMatch[2].toLowerCase().substring(0, 3)];
+    let year = namedMonthMatch[3];
+    if (year.length === 2) year = `20${year}`;
+    if (month) {
+      date = `${year}-${month}-${day}`;
+    }
+  } else {
+    // 2. Numeric date: e.g. "04/09/2026", "04-09-26", "04.09.2026"
+    const numericDateMatch = text.match(
+      /(?:on|dated)?\s*(\d{1,2})[-/.](\d{1,2})[-/.](\d{2,4})/i
+    );
+    if (numericDateMatch) {
+      const p1 = parseInt(numericDateMatch[1], 10);
+      const p2 = parseInt(numericDateMatch[2], 10);
+      let year = numericDateMatch[3];
+      if (year.length === 2) year = `20${year}`;
+
+      // In Indian banks, DD/MM/YYYY is standard format
+      if (p1 <= 31 && p2 <= 12) {
+        const day = String(p1).padStart(2, '0');
+        const month = String(p2).padStart(2, '0');
+        date = `${year}-${month}-${day}`;
+      }
+    }
+  }
+
+  // 3. Time extraction: e.g. "at 14:35", "14:35:10", "at 02:30 PM", "10:15am"
+  const timeMatch = text.match(
+    /(?:at|time)?\s*(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(am|pm)?/i
+  );
+  if (timeMatch) {
+    let hours = parseInt(timeMatch[1], 10);
+    const minutes = timeMatch[2];
+    const meridiem = timeMatch[4] ? timeMatch[4].toLowerCase() : null;
+
+    if (meridiem === 'pm' && hours < 12) hours += 12;
+    if (meridiem === 'am' && hours === 12) hours = 0;
+
+    if (hours >= 0 && hours <= 23) {
+      time = `${String(hours).padStart(2, '0')}:${minutes}`;
+    }
+  }
+
+  return { date, time };
+}
+
+export function extractBankOrSource(sender?: string, body?: string): string | undefined {
+  const cleanSender = (sender || '').toUpperCase();
+  const cleanBody = (body || '').toUpperCase();
+
+  if (cleanSender.includes('HDFC') || cleanBody.includes('HDFC BANK')) return 'HDFC Bank';
+  if (cleanSender.includes('SBI') || cleanBody.includes('STATE BANK OF INDIA') || cleanBody.includes('SBI')) return 'SBI';
+  if (cleanSender.includes('ICICI') || cleanBody.includes('ICICI BANK')) return 'ICICI Bank';
+  if (cleanSender.includes('AXIS') || cleanBody.includes('AXIS BANK')) return 'Axis Bank';
+  if (cleanSender.includes('KOTAK') || cleanBody.includes('KOTAK MAHINDRA') || cleanBody.includes('KOTAK')) return 'Kotak Bank';
+  if (cleanSender.includes('PNB') || cleanBody.includes('PUNJAB NATIONAL BANK')) return 'PNB';
+  if (cleanSender.includes('BOB') || cleanSender.includes('BARODA') || cleanBody.includes('BANK OF BARODA')) return 'Bank of Baroda';
+  if (cleanSender.includes('CANARA') || cleanSender.includes('CANBNK')) return 'Canara Bank';
+  if (cleanSender.includes('UNION') || cleanSender.includes('UBIN')) return 'Union Bank';
+  if (cleanSender.includes('INDUS') || cleanBody.includes('INDUSIND')) return 'IndusInd Bank';
+  if (cleanSender.includes('PAYTM') || cleanBody.includes('PAYTM PAYMENTS BANK')) return 'Paytm Bank';
+  if (cleanSender.includes('AIRTEL') || cleanBody.includes('AIRTEL PAYMENTS BANK')) return 'Airtel Payments Bank';
+  if (cleanSender.includes('GPAY') || cleanBody.includes('GOOGLE PAY')) return 'Google Pay';
+  if (cleanSender.includes('PHONEPE') || cleanBody.includes('PHONEPE')) return 'PhonePe';
+  if (cleanSender.includes('CREDB') || cleanBody.includes('CRED')) return 'CRED';
+  if (cleanSender.includes('AMAZON') || cleanBody.includes('AMAZON PAY')) return 'Amazon Pay';
+
+  // If sender has standard Indian alpha code like "VM-IDFCFB", extract IDFCFB
+  const parts = cleanSender.split('-');
+  if (parts.length > 1 && parts[1].length >= 3) {
+    return parts[1];
+  }
+
+  return undefined;
+}
+
 export function parseTransactionMessage(
   text: string,
   categories: Category[] = [],
-  source: 'sms' | 'notification' = 'sms'
+  source: 'sms' | 'notification' = 'sms',
+  options?: ParseOptions
 ): ParsedExpenseMessage | null {
   if (!text || text.trim().length < 10) return null;
 
@@ -143,9 +243,11 @@ export function parseTransactionMessage(
     if (exact) category = exact.name;
   }
 
-  const now = new Date();
-  const date = now.toISOString().split('T')[0];
-  const time = now.toTimeString().substring(0, 5);
+  // Extract transaction date and time from SMS text or metadata timestamp
+  const { date, time } = extractDateAndTime(clean, options?.timestamp);
+
+  // Extract source / bank name from sender code or message body
+  const bankOrSource = extractBankOrSource(options?.sender, clean);
 
   return {
     type,
@@ -158,6 +260,7 @@ export function parseTransactionMessage(
     accountInfo,
     date,
     time,
+    bankOrSource,
     evidence: clean,
     evidenceSource: source,
     confidence: 0.95,

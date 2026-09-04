@@ -194,11 +194,15 @@ export default function App() {
 
   const handleScanSMS = async (): Promise<number> => {
     try {
-      // Check native permissions first; request if missing
+      // Check native permissions first; request if missing directly like notifications
       const permStatus = await NativeBridgeService.checkPermissions();
       if (!permStatus.sms) {
-        const req = await NativeBridgeService.requestAllNativePermissions();
-        if (!req.sms) return 0;
+        const granted = await NativeBridgeService.requestSMSPermissions();
+        if (!granted) {
+          // Open direct modal with guidance if blocked by Android
+          setIsSmsModalOpen(true);
+          return 0;
+        }
       }
 
       const messages = await NativeBridgeService.readRecentBankSMS();
@@ -206,7 +210,10 @@ export default function App() {
 
       const candidates: ScannedCandidate[] = [];
       for (const msg of messages) {
-        const parsed = parseTransactionMessage(msg.body, categories, 'sms');
+        const parsed = parseTransactionMessage(msg.body, categories, 'sms', {
+          timestamp: msg.timestamp,
+          sender: msg.address,
+        });
         if (parsed) {
           const alreadyExists = transactions.some(
             (t) =>
@@ -225,6 +232,7 @@ export default function App() {
               paymentMode: parsed.paymentMode,
               date: parsed.date,
               time: parsed.time,
+              bankOrSource: parsed.bankOrSource,
               evidence: msg.body,
               confidence: parsed.confidence,
             });
@@ -347,12 +355,15 @@ export default function App() {
     };
   }, [securityConfig]);
 
-  // Auto-request native permissions on first launch (§7)
+  // Auto-request native permissions on first launch (SMS + Notifications)
   useEffect(() => {
     const requestNativePermissions = async () => {
       if (!localStorage.getItem('expense_diary_permissions_requested')) {
         try {
-          await NativeBridgeService.requestNotificationPermissions();
+          const res = await NativeBridgeService.requestAllNativePermissions();
+          if (res && res.sms) {
+            localStorage.setItem('expense_diary_sms_granted', 'true');
+          }
           localStorage.setItem('expense_diary_permissions_requested', 'true');
         } catch {
           // Web/browser fallback — no-op
@@ -362,8 +373,17 @@ export default function App() {
     requestNativePermissions();
   }, []);
 
-  // Daily Reminder Interval with smart duplicate suppression (§11)
+  // Daily Reminder: Native Alarm Scheduling (AlarmManager) & Foreground Heartbeat
   useEffect(() => {
+    if (profile.enableDailyReminder) {
+      const [hStr, mStr] = (profile.dailyReminderTime || '20:00').split(':');
+      const h = parseInt(hStr, 10) || 20;
+      const m = parseInt(mStr, 10) || 0;
+      NativeBridgeService.scheduleDailyReminder(h, m, t.reminderTitle, t.reminderBody);
+    } else {
+      NativeBridgeService.cancelDailyReminder();
+    }
+
     const checkReminder = () => {
       checkAndTriggerDailyReminder(
         profile.enableDailyReminder,

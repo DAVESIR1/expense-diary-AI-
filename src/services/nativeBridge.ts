@@ -35,6 +35,11 @@ interface NativeBridgePluginInterface {
   isBiometricsAvailable(): Promise<{ available: boolean; isSecure: boolean }>;
   authenticateBiometrics(options: { title?: string; subtitle?: string; cancelText?: string }): Promise<{ success: boolean; error?: string }>;
   printDocument(options: { jobName?: string; htmlContent?: string }): Promise<{ success: boolean; error?: string }>;
+  scheduleDailyReminder(options: { hour: number; minute: number; title: string; body: string }): Promise<{ success: boolean; scheduledTime?: number }>;
+  cancelDailyReminder(): Promise<{ success: boolean }>;
+  isNotificationListenerEnabled(): Promise<{ enabled: boolean }>;
+  openNotificationListenerSettings(): Promise<{ success: boolean }>;
+  getRecentFinancialNotifications(): Promise<{ notifications: Array<{ packageName: string; title: string; text: string; timestamp: number }> }>;
 }
 
 // Register native bridge plugin (provided by Android NativeBridgePlugin.java)
@@ -357,6 +362,67 @@ export const NativeBridgeService = {
         }
       }
       return false;
+    }
+  },
+
+  /**
+   * Schedule exact daily offline expense alarm via Android AlarmManager.
+   * Wakes up device and fires notification even when app is closed.
+   */
+  async scheduleDailyReminder(hour: number, minute: number, title: string, body: string): Promise<boolean> {
+    try {
+      const res = await NativeBridgeImpl.scheduleDailyReminder({ hour, minute, title, body });
+      return !!res?.success;
+    } catch {
+      return false;
+    }
+  },
+
+  /**
+   * Cancel daily reminder alarm.
+   */
+  async cancelDailyReminder(): Promise<boolean> {
+    try {
+      const res = await NativeBridgeImpl.cancelDailyReminder();
+      return !!res?.success;
+    } catch {
+      return false;
+    }
+  },
+
+  /**
+   * Check if Android Notification Listener Service is enabled by user.
+   */
+  async isNotificationListenerEnabled(): Promise<boolean> {
+    try {
+      const res = await NativeBridgeImpl.isNotificationListenerEnabled();
+      return !!res?.enabled;
+    } catch {
+      return false;
+    }
+  },
+
+  /**
+   * Open Android system Notification Listener Settings screen.
+   */
+  async openNotificationListenerSettings(): Promise<boolean> {
+    try {
+      const res = await NativeBridgeImpl.openNotificationListenerSettings();
+      return !!res?.success;
+    } catch {
+      return false;
+    }
+  },
+
+  /**
+   * Get recent financial notifications captured from UPI/Banking apps.
+   */
+  async getRecentFinancialNotifications(): Promise<Array<{ packageName: string; title: string; text: string; timestamp: number }>> {
+    try {
+      const res = await NativeBridgeImpl.getRecentFinancialNotifications();
+      return res?.notifications || [];
+    } catch {
+      return [];
     }
   },
 };

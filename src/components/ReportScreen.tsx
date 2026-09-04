@@ -466,36 +466,6 @@ export const ReportScreen: React.FC<ReportScreenProps> = ({
               : 'Professional PDF & Excel reports with dynamic filtering'}
           </p>
         </div>
-
-        {/* Header Action Buttons: Strictly PDF, Excel and Share */}
-        <div className="flex items-center gap-2 flex-wrap">
-          <button
-            id="export-pdf-btn-header"
-            onClick={handlePrintPdf}
-            className="flex-1 sm:flex-none py-2.5 px-4 rounded-xl bg-stone-900 hover:bg-stone-800 text-white font-semibold text-xs transition cursor-pointer flex items-center justify-center gap-2 shadow-xs active:scale-98"
-          >
-            <Printer className="w-4 h-4 text-stone-300" />
-            <span>{t.exportPdf}</span>
-          </button>
-
-          <button
-            id="export-excel-btn-header"
-            onClick={handleExportExcel}
-            className="flex-1 sm:flex-none py-2.5 px-4 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white font-semibold text-xs transition cursor-pointer flex items-center justify-center gap-2 shadow-xs active:scale-98"
-          >
-            <FileSpreadsheet className="w-4 h-4 text-emerald-200" />
-            <span>{t.exportExcel}</span>
-          </button>
-
-          <button
-            id="share-report-btn-header"
-            onClick={handleShareReport}
-            className="p-2.5 rounded-xl border border-stone-200 bg-stone-50 hover:bg-stone-100 text-stone-700 transition cursor-pointer flex items-center justify-center shadow-xs"
-            title={isGu ? 'શેર કરો' : 'Share'}
-          >
-            <Share2 className="w-4 h-4" />
-          </button>
-        </div>
       </div>
 
       {/* 1. FILTERS & CATEGORY CONFIGURATION CARD (Task 10: AT TOP) */}

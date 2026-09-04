@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   Globe, 
   Palette, 
@@ -20,7 +20,8 @@ import {
   EyeOff, 
   AlertCircle, 
   RefreshCw,
-  Layers 
+  Layers,
+  Share2
 } from 'lucide-react';
 import { LANGUAGES, TranslationStrings } from '../data/languages';
 import { Category, Transaction, UserProfile, SecurityConfig, DiaryEntry, BorrowedLentRecord } from '../types';
@@ -102,11 +103,13 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
 
   // Native Permissions State
   const [permStatus, setPermStatus] = useState<NativePermissionsStatus>({ sms: false, notifications: false, usage: false });
+  const [notifListenerGranted, setNotifListenerGranted] = useState(false);
   const [permLoading, setPermLoading] = useState(false);
 
   // Check and refresh permissions on mount and when app regains focus/visibility
   const refreshPermissions = () => {
     NativeBridgeService.checkPermissions().then(setPermStatus).catch(() => {});
+    NativeBridgeService.isNotificationListenerEnabled().then(setNotifListenerGranted).catch(() => {});
   };
 
   useEffect(() => {
@@ -161,6 +164,10 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
     await NativeBridgeService.openUsageSettings();
   };
 
+  const handleOpenNotificationListenerSettings = async () => {
+    await NativeBridgeService.openNotificationListenerSettings();
+  };
+
   // Security Setup Modal
   const [isSecurityModalOpen, setIsSecurityModalOpen] = useState(false);
 
@@ -171,6 +178,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   const [passphraseError, setPassphraseError] = useState<string | null>(null);
 
   // Restore Modal State (File or Cloud)
+  const restoreFileInputRef = useRef<HTMLInputElement>(null);
   const [pendingRestoreEnvelope, setPendingRestoreEnvelope] = useState<EncryptedBackupEnvelope | null>(null);
   const [restorePassphraseInput, setRestorePassphraseInput] = useState('');
   const [restoreError, setRestoreError] = useState<string | null>(null);
@@ -248,6 +256,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
         categories,
         transactions,
         diaryEntries,
+        borrowedLentRecords,
         securityConfig: {
           ...securityConfig,
           isLocked: false,
@@ -263,6 +272,54 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
       );
     } catch (err: any) {
       alert(err.message || 'Error generating encrypted backup.');
+    }
+  };
+
+  // 1b. Share Encrypted Backup (.edb) directly via WhatsApp / Drive / Email
+  const handleShareEncryptedBackup = async () => {
+    try {
+      const passphrase =
+        savedPassphraseWords.length > 0
+          ? savedPassphraseWords.join(' ')
+          : prompt(
+              isGu
+                ? 'બેકઅપને એન્ક્રિપ્ટ કરવા માટે તમારો ગુપ્ત પાસવર્ડ દાખલ કરો:'
+                : 'Enter a passphrase to encrypt your backup:'
+            );
+
+      if (!passphrase) return;
+
+      const fullBackupData = {
+        version: '2.0.0',
+        exportedAt: new Date().toISOString(),
+        profile,
+        categories,
+        transactions,
+        diaryEntries,
+        borrowedLentRecords,
+        securityConfig: {
+          ...securityConfig,
+          isLocked: false,
+        },
+      };
+
+      const envelope = await encryptPayload(fullBackupData, passphrase);
+      const json = JSON.stringify(envelope, null, 2);
+      const dateStr = new Date().toISOString().split('T')[0];
+      const filename = `expense-diary-backup-${dateStr}.edb`;
+
+      const shared = await NativeBridgeService.shareFile({
+        fileName: filename,
+        textContent: json,
+        mimeType: 'application/octet-stream',
+        title: isGu ? 'ખર્ચ ડાયરી એન્ક્રિપ્ટેડ બેકઅપ' : 'Expense Diary Encrypted Backup'
+      });
+
+      if (shared.success) {
+        showNotice(isGu ? 'બેકઅપ સફળતાપૂર્વક શેર થયું!' : 'Backup successfully shared!');
+      }
+    } catch (err: any) {
+      alert(err.message || 'Error sharing encrypted backup.');
     }
   };
 
@@ -284,6 +341,17 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
         } else if (Array.isArray(parsed.transactions)) {
           // Backward compatibility with legacy plain JSON backup
           onRestoreTransactions(parsed.transactions);
+          if (Array.isArray(parsed.diaryEntries)) onRestoreDiaryEntries(parsed.diaryEntries);
+          if (Array.isArray(parsed.borrowedLentRecords) && onRestoreBorrowedLentRecords) {
+            onRestoreBorrowedLentRecords(parsed.borrowedLentRecords);
+          }
+          if (Array.isArray(parsed.categories)) {
+            parsed.categories.forEach((cat: Category) => {
+              if (!categories.some(c => c.id === cat.id)) {
+                onAddCategory(cat);
+              }
+            });
+          }
           if (parsed.profile) onUpdateProfile(parsed.profile);
           showNotice(isGu ? 'ડેટા સફળતાપૂર્વક રીસ્ટોર થયો!' : 'Data restored successfully!');
         } else {
@@ -310,6 +378,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
         categories?: Category[];
         profile?: UserProfile;
         diaryEntries?: DiaryEntry[];
+        borrowedLentRecords?: BorrowedLentRecord[];
       }>(pendingRestoreEnvelope, normalized);
 
       if (Array.isArray(decrypted.transactions)) {
@@ -317,6 +386,16 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
       }
       if (Array.isArray(decrypted.diaryEntries)) {
         onRestoreDiaryEntries(decrypted.diaryEntries);
+      }
+      if (Array.isArray(decrypted.borrowedLentRecords) && onRestoreBorrowedLentRecords) {
+        onRestoreBorrowedLentRecords(decrypted.borrowedLentRecords);
+      }
+      if (Array.isArray(decrypted.categories)) {
+        decrypted.categories.forEach((cat: Category) => {
+          if (!categories.some(c => c.id === cat.id)) {
+            onAddCategory(cat);
+          }
+        });
       }
       if (decrypted.profile) {
         onUpdateProfile(decrypted.profile);
@@ -522,7 +601,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
             : 'AES-GCM 256-bit military-grade encrypted backup. Files save directly to your Downloads folder.'}
         </p>
 
-        {/* 3 Simple Action Buttons (Task 13) */}
+        {/* Action Buttons: Export, Share, Import, and Multi-Merge */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
           <button
             id="export-backup-btn"
@@ -530,30 +609,42 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
             className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200 hover:bg-emerald-100 text-xs font-bold text-emerald-900 flex items-center justify-center gap-2 cursor-pointer transition shadow-xs active:scale-98"
           >
             <DownloadCloud className="w-4 h-4 text-emerald-700" />
-            <span>{isGu ? 'Export Backup Data (બેકઅપ એક્સપોર્ટ)' : 'Export Backup Data'}</span>
+            <span>{isGu ? 'Export Backup (સેવ કરો)' : 'Export to Downloads'}</span>
           </button>
 
-          <label
+          <button
+            id="share-backup-btn"
+            onClick={handleShareEncryptedBackup}
+            className="p-3.5 rounded-2xl bg-teal-50 border border-teal-200 hover:bg-teal-100 text-xs font-bold text-teal-900 flex items-center justify-center gap-2 cursor-pointer transition shadow-xs active:scale-98"
+          >
+            <Share2 className="w-4 h-4 text-teal-700" />
+            <span>{isGu ? 'Share Backup (શેર કરો)' : 'Share Backup File'}</span>
+          </button>
+
+          <button
             id="import-backup-btn"
+            type="button"
+            onClick={() => restoreFileInputRef.current?.click()}
             className="p-3.5 rounded-2xl bg-stone-50 border border-stone-200 hover:bg-stone-100 text-xs font-bold text-stone-800 flex items-center justify-center gap-2 cursor-pointer transition shadow-xs active:scale-98"
           >
             <Upload className="w-4 h-4 text-stone-600" />
-            <span>{isGu ? 'Import Backup Data (બેકઅપ ઇમ્પોર્ટ)' : 'Import Backup Data'}</span>
-            <input
-              type="file"
-              accept=".edb,.json,application/json,text/plain,*/*"
-              onChange={handleFileSelectForRestore}
-              className="hidden"
-            />
-          </label>
+            <span>{isGu ? 'Import Backup Data (ઇમ્પોર્ટ)' : 'Import Backup Data'}</span>
+          </button>
+          <input
+            ref={restoreFileInputRef}
+            type="file"
+            accept=".edb,.json,application/json,text/plain,*/*"
+            onChange={handleFileSelectForRestore}
+            className="hidden"
+          />
 
           <button
             id="multi-import-backup-btn"
             onClick={() => setIsMultiRestoreOpen(true)}
-            className="p-3.5 rounded-2xl bg-indigo-50 border border-indigo-200 hover:bg-indigo-100 text-xs font-bold text-indigo-950 flex items-center justify-center gap-2 cursor-pointer transition col-span-1 sm:col-span-2 shadow-xs active:scale-98"
+            className="p-3.5 rounded-2xl bg-indigo-50 border border-indigo-200 hover:bg-indigo-100 text-xs font-bold text-indigo-950 flex items-center justify-center gap-2 cursor-pointer transition shadow-xs active:scale-98"
           >
             <Layers className="w-4 h-4 text-indigo-700" />
-            <span>{isGu ? 'Multiple Import Backup Data (મલ્ટિપલ બેકઅપ મર્જ)' : 'Multiple Import Backup Data'}</span>
+            <span>{isGu ? 'Multiple Backup Merge (મર્જ)' : 'Multiple Backup Merge'}</span>
           </button>
         </div>
 
@@ -935,6 +1026,30 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
             <button
               onClick={handleOpenUsageSettings}
               className="py-2 px-4 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold transition shrink-0 cursor-pointer"
+            >
+              {isGu ? 'સેટિંગ્સ ખોલો' : 'Open Settings'}
+            </button>
+          )}
+        </div>
+
+        {/* Notification Listener Permission (UPI / Banking Transaction Notifications) */}
+        <div className="flex items-center justify-between p-3.5 rounded-2xl bg-purple-50/50 border border-purple-200">
+          <div className="space-y-0.5">
+            <div className="text-xs font-bold text-stone-800">
+              {isGu ? 'UPI / બેંક નોટિફિકેશન રીડ' : 'Notification Read Access'}
+            </div>
+            <div className="text-[11px] text-stone-500">
+              {isGu ? 'GPay, PhonePe, Paytm નોટિફિકેશનમાંથી વ્યવહાર ઓળખવા' : 'Detect transactions from UPI & payment app notifications'}
+            </div>
+          </div>
+          {notifListenerGranted ? (
+            <span className="px-3 py-1.5 rounded-xl bg-purple-100 text-purple-700 text-xs font-semibold flex items-center gap-1">
+              <Check className="w-3.5 h-3.5" /> {isGu ? 'મંજૂર' : 'Granted'}
+            </span>
+          ) : (
+            <button
+              onClick={handleOpenNotificationListenerSettings}
+              className="py-2 px-4 rounded-xl bg-purple-700 hover:bg-purple-800 text-white text-xs font-semibold transition shrink-0 cursor-pointer"
             >
               {isGu ? 'સેટિંગ્સ ખોલો' : 'Open Settings'}
             </button>

@@ -90,6 +90,15 @@ export async function sendDailyReminderNotification(
     laterLabel?: string;
   }
 ): Promise<void> {
+  // 1. Try native Android status bar notification with sound/vibration first
+  try {
+    const { NativeBridgeService } = await import('./nativeBridge');
+    const nativeShown = await NativeBridgeService.showNotification(title, body);
+    if (nativeShown) return;
+  } catch {
+    // Fallback to web notifications
+  }
+
   if (!('Notification' in window) || Notification.permission !== 'granted') {
     return;
   }
