@@ -40,6 +40,9 @@ interface NativeBridgePluginInterface {
   isNotificationListenerEnabled(): Promise<{ enabled: boolean }>;
   openNotificationListenerSettings(): Promise<{ success: boolean }>;
   getRecentFinancialNotifications(): Promise<{ notifications: Array<{ packageName: string; title: string; text: string; timestamp: number }> }>;
+  savePersistentVault(options: { vaultData: string }): Promise<{ success: boolean; timestamp?: number }>;
+  getPersistentVault(): Promise<{ exists: boolean; vaultData?: string; error?: string }>;
+  clearPersistentVault(): Promise<{ success: boolean }>;
 }
 
 // Register native bridge plugin (provided by Android NativeBridgePlugin.java)
@@ -423,6 +426,48 @@ export const NativeBridgeService = {
       return res?.notifications || [];
     } catch {
       return [];
+    }
+  },
+
+  /**
+   * Save complete encrypted app vault to native persistent Android storage (SharedPreferences + FilesDir).
+   * Survives APK updates, cache clears, and WebView data partition resets.
+   */
+  async savePersistentVault(vaultData: string): Promise<boolean> {
+    try {
+      const res = await NativeBridgeImpl.savePersistentVault({ vaultData });
+      return !!res?.success;
+    } catch (e) {
+      console.warn('[NativeBridge] savePersistentVault not available or failed:', e);
+      return false;
+    }
+  },
+
+  /**
+   * Retrieve persistent vault from native Android storage if available.
+   */
+  async getPersistentVault(): Promise<{ exists: boolean; vaultData?: string }> {
+    try {
+      const res = await NativeBridgeImpl.getPersistentVault();
+      return {
+        exists: !!res?.exists && !!res?.vaultData,
+        vaultData: res?.vaultData,
+      };
+    } catch (e) {
+      console.warn('[NativeBridge] getPersistentVault fallback (non-native):', e);
+      return { exists: false };
+    }
+  },
+
+  /**
+   * Clear persistent vault from native storage (upon account reset/wipe).
+   */
+  async clearPersistentVault(): Promise<boolean> {
+    try {
+      const res = await NativeBridgeImpl.clearPersistentVault();
+      return !!res?.success;
+    } catch {
+      return false;
     }
   },
 };

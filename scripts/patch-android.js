@@ -142,7 +142,9 @@ import com.getcapacitor.annotation.CapacitorPlugin;
 import com.getcapacitor.annotation.Permission;
 import com.getcapacitor.annotation.PermissionCallback;
 
+import android.content.SharedPreferences;
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
@@ -964,18 +966,173 @@ public class NativeBridgePlugin extends Plugin {
             call.resolve(res);
         }
     }
+
+    @PluginMethod
+    public void savePersistentVault(PluginCall call) {
+        String vaultData = call.getString("vaultData", "");
+        if (vaultData == null || vaultData.trim().isEmpty()) {
+            call.reject("vaultData cannot be empty");
+            return;
+        }
+
+        try {
+            Context context = getContext();
+
+            // 1. Save to SharedPreferences (survives APK updates and webview cache clears)
+            SharedPreferences prefs = context.getSharedPreferences("expense_diary_vault_prefs", Context.MODE_PRIVATE);
+            prefs.edit()
+                .putString("vault_data", vaultData)
+                .putLong("saved_at", System.currentTimeMillis())
+                .apply();
+
+            // 2. Save to internal storage file atomically
+            File filesDir = context.getFilesDir();
+            File vaultFile = new File(filesDir, "expense_diary_vault.json");
+            File tempFile = new File(filesDir, "expense_diary_vault.json.tmp");
+
+            FileOutputStream fos = new FileOutputStream(tempFile);
+            fos.write(vaultData.getBytes(StandardCharsets.UTF_8));
+            fos.flush();
+            try { fos.getFD().sync(); } catch (Exception ignored) {}
+            fos.close();
+
+            if (vaultFile.exists()) {
+                File backupFile = new File(filesDir, "expense_diary_vault_backup.json");
+                if (backupFile.exists()) backupFile.delete();
+                vaultFile.renameTo(backupFile);
+            }
+            tempFile.renameTo(vaultFile);
+
+            // 3. Save mirror to external app filesDir if available
+            try {
+                File extDir = context.getExternalFilesDir(null);
+                if (extDir != null) {
+                    File extFile = new File(extDir, "expense_diary_vault_mirror.json");
+                    FileOutputStream extFos = new FileOutputStream(extFile);
+                    extFos.write(vaultData.getBytes(StandardCharsets.UTF_8));
+                    extFos.flush();
+                    extFos.close();
+                }
+            } catch (Exception ignored) {}
+
+            JSObject res = new JSObject();
+            res.put("success", true);
+            res.put("timestamp", System.currentTimeMillis());
+            call.resolve(res);
+        } catch (Exception e) {
+            call.reject("Failed to save persistent vault: " + e.getMessage());
+        }
+    }
+
+    @PluginMethod
+    public void getPersistentVault(PluginCall call) {
+        try {
+            Context context = getContext();
+            String vaultData = null;
+
+            // Priority 1: SharedPreferences
+            SharedPreferences prefs = context.getSharedPreferences("expense_diary_vault_prefs", Context.MODE_PRIVATE);
+            String fromPrefs = prefs.getString("vault_data", null);
+            if (fromPrefs != null && !fromPrefs.trim().isEmpty()) {
+                vaultData = fromPrefs;
+            }
+
+            // Priority 2: Internal storage file
+            if (vaultData == null || vaultData.trim().isEmpty()) {
+                File vaultFile = new File(context.getFilesDir(), "expense_diary_vault.json");
+                if (vaultFile.exists() && vaultFile.length() > 0) {
+                    vaultData = readFileToString(vaultFile);
+                }
+            }
+
+            // Priority 3: Internal backup file
+            if (vaultData == null || vaultData.trim().isEmpty()) {
+                File backupFile = new File(context.getFilesDir(), "expense_diary_vault_backup.json");
+                if (backupFile.exists() && backupFile.length() > 0) {
+                    vaultData = readFileToString(backupFile);
+                }
+            }
+
+            // Priority 4: External files dir mirror
+            if (vaultData == null || vaultData.trim().isEmpty()) {
+                try {
+                    File extDir = context.getExternalFilesDir(null);
+                    if (extDir != null) {
+                        File extFile = new File(extDir, "expense_diary_vault_mirror.json");
+                        if (extFile.exists() && extFile.length() > 0) {
+                            vaultData = readFileToString(extFile);
+                        }
+                    }
+                } catch (Exception ignored) {}
+            }
+
+            JSObject res = new JSObject();
+            if (vaultData != null && !vaultData.trim().isEmpty()) {
+                res.put("exists", true);
+                res.put("vaultData", vaultData);
+            } else {
+                res.put("exists", false);
+            }
+            call.resolve(res);
+        } catch (Exception e) {
+            JSObject res = new JSObject();
+            res.put("exists", false);
+            res.put("error", e.getMessage());
+            call.resolve(res);
+        }
+    }
+
+    @PluginMethod
+    public void clearPersistentVault(PluginCall call) {
+        try {
+            Context context = getContext();
+            SharedPreferences prefs = context.getSharedPreferences("expense_diary_vault_prefs", Context.MODE_PRIVATE);
+            prefs.edit().clear().apply();
+
+            File vaultFile = new File(context.getFilesDir(), "expense_diary_vault.json");
+            if (vaultFile.exists()) vaultFile.delete();
+            File backupFile = new File(context.getFilesDir(), "expense_diary_vault_backup.json");
+            if (backupFile.exists()) backupFile.delete();
+            try {
+                File extDir = context.getExternalFilesDir(null);
+                if (extDir != null) {
+                    File extFile = new File(extDir, "expense_diary_vault_mirror.json");
+                    if (extFile.exists()) extFile.delete();
+                }
+            } catch (Exception ignored) {}
+
+            JSObject res = new JSObject();
+            res.put("success", true);
+            call.resolve(res);
+        } catch (Exception e) {
+            call.reject("Failed to clear vault: " + e.getMessage());
+        }
+    }
+
+    private String readFileToString(File file) {
+        try {
+            FileInputStream fis = new FileInputStream(file);
+            byte[] bytes = new byte[(int) file.length()];
+            fis.read(bytes);
+            fis.close();
+            return new String(bytes, StandardCharsets.UTF_8);
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
 }
 `;
 
 safeWrite(path.join(javaSrcDir, 'NativeBridgePlugin.java'), nativePluginCode);
 console.log('Injected NativeBridgePlugin.java');
 
-// 4. Register plugin in MainActivity.java with DownloadListener
+// 4. Register plugin in MainActivity.java with DownloadListener and DOM Storage enabled
 const mainActivityPath = path.join(javaSrcDir, 'MainActivity.java');
 const mainActivityCode = `package com.expensediary.ai;
 
 import android.os.Bundle;
 import android.webkit.DownloadListener;
+import android.webkit.WebSettings;
 import com.getcapacitor.BridgeActivity;
 
 public class MainActivity extends BridgeActivity {
@@ -985,6 +1142,10 @@ public class MainActivity extends BridgeActivity {
         super.onCreate(savedInstanceState);
 
         if (this.bridge != null && this.bridge.getWebView() != null) {
+            WebSettings ws = this.bridge.getWebView().getSettings();
+            ws.setDomStorageEnabled(true);
+            ws.setDatabaseEnabled(true);
+
             this.bridge.getWebView().setDownloadListener(new DownloadListener() {
                 @Override
                 public void onDownloadStart(String url, String userAgent, String contentDisposition, String mimetype, long contentLength) {

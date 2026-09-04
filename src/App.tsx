@@ -35,6 +35,7 @@ import { hashWithPBKDF2 } from './services/security';
 import { MigrationManager } from './services/dataMigration';
 import { NativeBridgeService } from './services/nativeBridge';
 import { parseTransactionMessage } from './utils/smsParser';
+import { VaultStorage } from './services/vaultStorage';
 
 // Sequential data migration & backward compatibility (§21)
 MigrationManager.runMigrations();
@@ -261,7 +262,49 @@ export default function App() {
     }
   }, [isAppLocked, showOnboarding]);
 
-  // Persistence Effects
+  // Synchronize from native Android persistent storage upon app update/launch
+  useEffect(() => {
+    async function syncFromNativePersistentVault() {
+      try {
+        const vault = await VaultStorage.loadVault();
+        if (vault) {
+          const localTxRaw = localStorage.getItem('expense_diary_transactions');
+          const localTx: Transaction[] = localTxRaw ? JSON.parse(localTxRaw) : [];
+          const isOnboarded = localStorage.getItem('expense_diary_onboarded') === 'true';
+
+          // If local storage was wiped or missing onboarding or empty (typical after APK update)
+          if (!isOnboarded || localTx.length === 0) {
+            console.log('[App] Auto-restoring from native persistent vault after app update');
+            if (vault.transactions && vault.transactions.length > 0) {
+              setTransactions(vault.transactions);
+            }
+            if (vault.diaryEntries) setDiaryEntries(vault.diaryEntries);
+            if (vault.borrowedLentRecords) setBorrowedLentRecords(vault.borrowedLentRecords);
+            if (vault.categories && vault.categories.length > 0) setCategories(vault.categories);
+            if (vault.profile) setProfile(vault.profile);
+            if (vault.securityConfig) setSecurityConfig(vault.securityConfig);
+            if (vault.savedPassphraseWords) setSavedPassphraseWords(vault.savedPassphraseWords);
+            if (vault.lang) setCurrentLang(vault.lang);
+            if (vault.theme) setActiveTheme(vault.theme);
+            if (vault.font) setActiveFont(vault.font);
+            if (vault.currency) setCurrency(vault.currency);
+
+            VaultStorage.syncToLocalStorage(vault);
+            setShowOnboarding(false);
+
+            if (vault.securityConfig && vault.securityConfig.hasCompletedSetup) {
+              setIsAppLocked(true);
+            }
+          }
+        }
+      } catch (err) {
+        console.error('[App] Error synchronizing persistent native vault:', err);
+      }
+    }
+    syncFromNativePersistentVault();
+  }, []);
+
+  // Persistence Effects: sync both to localStorage and to persistent native Android storage
   useEffect(() => {
     localStorage.setItem('expense_diary_transactions', JSON.stringify(transactions));
   }, [transactions]);
@@ -309,6 +352,42 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('expense_diary_currency', currency);
   }, [currency]);
+
+  // Unified persistent vault auto-save (Android SharedPreferences + FilesDir)
+  useEffect(() => {
+    const isOnboarded = localStorage.getItem('expense_diary_onboarded') === 'true' || !showOnboarding;
+    if (isOnboarded || transactions.length > 0) {
+      VaultStorage.saveVault({
+        version: 2,
+        updatedAt: new Date().toISOString(),
+        transactions,
+        diaryEntries,
+        borrowedLentRecords,
+        categories,
+        profile,
+        securityConfig,
+        savedPassphraseWords,
+        lang: currentLang,
+        theme: activeTheme,
+        font: activeFont,
+        currency,
+        onboarded: isOnboarded,
+      });
+    }
+  }, [
+    transactions,
+    diaryEntries,
+    borrowedLentRecords,
+    categories,
+    profile,
+    securityConfig,
+    savedPassphraseWords,
+    currentLang,
+    activeTheme,
+    activeFont,
+    currency,
+    showOnboarding,
+  ]);
 
   // Current translation strings
   const t = getTranslation(currentLang);
@@ -518,7 +597,7 @@ export default function App() {
     }));
   };
 
-  // Onboarding Complete
+  // Onboarding Complete (Supports direct data restoration from native vault or backup file)
   const handleOnboardingComplete = (data: {
     name: string;
     currency: string;
@@ -527,21 +606,72 @@ export default function App() {
     passphraseWords: string[];
     dailyReminderTime: string;
     enableDailyReminder: boolean;
+    restoredData?: {
+      transactions?: Transaction[];
+      diaryEntries?: DiaryEntry[];
+      borrowedLentRecords?: BorrowedLentRecord[];
+      categories?: Category[];
+    };
   }) => {
-    setProfile((prev) => ({
-      ...prev,
+    const updatedProfile = {
+      ...profile,
       name: data.name,
       monthlyBudget: data.budget,
       currency: data.currency,
       dailyReminderTime: data.dailyReminderTime,
       enableDailyReminder: data.enableDailyReminder,
-    }));
+    };
+
+    setProfile(updatedProfile);
     setCurrency(data.currency);
     setSecurityConfig(data.securityConfig);
     setSavedPassphraseWords(data.passphraseWords);
     setIsAppLocked(false);
     localStorage.setItem('expense_diary_onboarded', 'true');
+
+    let finalTransactions = transactions;
+    let finalDiary = diaryEntries;
+    let finalBL = borrowedLentRecords;
+    let finalCategories = categories;
+
+    if (data.restoredData) {
+      if (data.restoredData.transactions && data.restoredData.transactions.length > 0) {
+        finalTransactions = data.restoredData.transactions;
+        setTransactions(finalTransactions);
+      }
+      if (data.restoredData.diaryEntries) {
+        finalDiary = data.restoredData.diaryEntries;
+        setDiaryEntries(finalDiary);
+      }
+      if (data.restoredData.borrowedLentRecords) {
+        finalBL = data.restoredData.borrowedLentRecords;
+        setBorrowedLentRecords(finalBL);
+      }
+      if (data.restoredData.categories && data.restoredData.categories.length > 0) {
+        finalCategories = data.restoredData.categories;
+        setCategories(finalCategories);
+      }
+    }
+
     setShowOnboarding(false);
+
+    // Save full vault immediately to both localStorage and Android SharedPreferences / FilesDir
+    VaultStorage.saveVaultImmediate({
+      version: 2,
+      updatedAt: new Date().toISOString(),
+      transactions: finalTransactions,
+      diaryEntries: finalDiary,
+      borrowedLentRecords: finalBL,
+      categories: finalCategories,
+      profile: updatedProfile,
+      securityConfig: data.securityConfig,
+      savedPassphraseWords: data.passphraseWords,
+      lang: currentLang,
+      theme: activeTheme,
+      font: activeFont,
+      currency: data.currency,
+      onboarded: true,
+    });
   };
 
   // Font class resolver

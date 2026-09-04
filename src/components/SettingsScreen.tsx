@@ -1068,7 +1068,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
             <h3 className="text-sm font-bold tracking-tight">{t.appName}</h3>
           </div>
           <span className="text-[10px] font-mono font-bold bg-stone-800 text-emerald-400 px-2 py-0.5 rounded-md border border-stone-700">
-            v1.1.0 Stable
+            v1.2.0 Stable
           </span>
         </div>
 

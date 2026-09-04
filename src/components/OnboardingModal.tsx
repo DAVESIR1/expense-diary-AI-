@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   ArrowRight, 
   ArrowLeft,
@@ -16,10 +16,11 @@ import {
   Clock,
   KeyRound,
   Upload,
-  RefreshCw
+  RefreshCw,
+  FileText
 } from 'lucide-react';
 import { TranslationStrings, LANGUAGES } from '../data/languages';
-import { SecurityConfig } from '../types';
+import { SecurityConfig, Transaction, DiaryEntry, BorrowedLentRecord, Category } from '../types';
 import { 
   generate12WordPassphrase, 
   normalizeWords, 
@@ -29,6 +30,8 @@ import {
 } from '../services/security';
 import { requestNotificationPermission } from '../services/notifications';
 import { NativeBridgeService } from '../services/nativeBridge';
+import { VaultStorage } from '../services/vaultStorage';
+import { decryptPayload } from '../services/encryption';
 
 interface OnboardingModalProps {
   onComplete: (data: {
@@ -39,6 +42,12 @@ interface OnboardingModalProps {
     passphraseWords: string[];
     dailyReminderTime: string;
     enableDailyReminder: boolean;
+    restoredData?: {
+      transactions?: Transaction[];
+      diaryEntries?: DiaryEntry[];
+      borrowedLentRecords?: BorrowedLentRecord[];
+      categories?: Category[];
+    };
   }) => void;
   currentLang: string;
   onSelectLanguage: (lang: string) => void;
@@ -64,6 +73,14 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
   const [restoreNewPin, setRestoreNewPin] = useState('');
   const [restoreConfirmPin, setRestoreConfirmPin] = useState('');
   const [restoreName, setRestoreName] = useState('');
+  const [nativeVaultFound, setNativeVaultFound] = useState<{
+    exists: boolean;
+    transactionCount?: number;
+    diaryCount?: number;
+  } | null>(null);
+  const [selectedBackupFile, setSelectedBackupFile] = useState<File | null>(null);
+  const [isRestoring, setIsRestoring] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Step 2: 12 Words
   const [words, setWords] = useState<string[]>([]);
@@ -87,6 +104,11 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
   useEffect(() => {
     setWords(generate12WordPassphrase());
     isBiometricsAvailable().then((res) => setBiometricsSupported(res));
+    VaultStorage.hasNativeVault().then((res) => {
+      if (res.exists) {
+        setNativeVaultFound(res);
+      }
+    });
   }, []);
 
   const currencies = [
@@ -215,6 +237,7 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
     }
 
     try {
+      setIsRestoring(true);
       const { hash: pinHash, salt: pinSalt } = await hashWithPBKDF2(restoreNewPin);
       const normalized = normalizeWords(wordsArr);
       const { hash: wordsHash, salt: wordsSalt } = await hashWithPBKDF2(normalized);
@@ -231,17 +254,80 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
         diaryLockEnabled: false,
       };
 
+      let restoredTransactions: Transaction[] | undefined;
+      let restoredDiary: DiaryEntry[] | undefined;
+      let restoredBL: BorrowedLentRecord[] | undefined;
+      let restoredCategories: Category[] | undefined;
+      let restoredName = restoreName.trim();
+      let restoredCurrency = currency;
+      let restoredBudget = 0;
+
+      // Source A: User uploaded/selected a backup file (.edb / .json)
+      if (selectedBackupFile) {
+        try {
+          const fileText = await selectedBackupFile.text();
+          const parsed = JSON.parse(fileText);
+          if (parsed.magic === 'EDBAES256') {
+            const decrypted: any = await decryptPayload(parsed, wordsArr.join(' '));
+            if (decrypted) {
+              restoredTransactions = decrypted.transactions;
+              restoredDiary = decrypted.diaryEntries;
+              restoredBL = decrypted.borrowedLentRecords;
+              restoredCategories = decrypted.categories;
+              if (decrypted.profile?.name) restoredName = decrypted.profile.name;
+              if (decrypted.profile?.monthlyBudget) restoredBudget = decrypted.profile.monthlyBudget;
+              if (decrypted.profile?.currency) restoredCurrency = decrypted.profile.currency;
+            }
+          } else if (parsed.transactions) {
+            restoredTransactions = parsed.transactions;
+            restoredDiary = parsed.diaryEntries;
+            restoredBL = parsed.borrowedLentRecords;
+            restoredCategories = parsed.categories;
+            if (parsed.profile?.name) restoredName = parsed.profile.name;
+          }
+        } catch (e: any) {
+          setError(
+            isGu
+              ? 'બેકઅપ ફાઈલ ડીક્રિપ્ટ કરવામાં ભૂલ થઈ: કૃપા કરીને ૧૨ શબ્દો તપાસો.'
+              : 'Failed to decrypt backup file. Please verify your 12 recovery words.'
+          );
+          setIsRestoring(false);
+          return;
+        }
+      } 
+      // Source B: Persistent native vault or device storage
+      else {
+        const vault = await VaultStorage.loadVault();
+        if (vault) {
+          restoredTransactions = vault.transactions;
+          restoredDiary = vault.diaryEntries;
+          restoredBL = vault.borrowedLentRecords;
+          restoredCategories = vault.categories;
+          if (vault.profile?.name && !restoredName) restoredName = vault.profile.name;
+          if (vault.profile?.monthlyBudget) restoredBudget = vault.profile.monthlyBudget;
+          if (vault.currency) restoredCurrency = vault.currency;
+        }
+      }
+
       onComplete({
-        name: restoreName.trim() || (isGu ? 'યુઝર' : 'User'),
-        currency,
-        budget: 0,
+        name: restoredName || (isGu ? 'યુઝર' : 'User'),
+        currency: restoredCurrency,
+        budget: restoredBudget,
         securityConfig,
         passphraseWords: wordsArr,
         dailyReminderTime: '20:00',
         enableDailyReminder: false,
+        restoredData: {
+          transactions: restoredTransactions,
+          diaryEntries: restoredDiary,
+          borrowedLentRecords: restoredBL,
+          categories: restoredCategories,
+        },
       });
     } catch (err: any) {
       setError(err?.message || (isGu ? 'પુનઃપ્રાપ્તિ નિષ્ફળ રહી.' : 'Failed to restore.'));
+    } finally {
+      setIsRestoring(false);
     }
   };
 
@@ -713,16 +799,64 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
               </p>
             </div>
 
-            <div className="bg-emerald-50/70 border border-emerald-200/90 rounded-2xl p-3 text-xs text-emerald-950 space-y-1">
-              <div className="flex items-center gap-1.5 font-bold text-emerald-900">
-                <KeyRound className="w-4 h-4 text-emerald-600 shrink-0" />
-                <span>{isGu ? '૧૨ ગુપ્ત શબ્દો (Passphrase)' : '12 Secret Recovery Words'}</span>
+            {nativeVaultFound?.exists ? (
+              <div className="bg-emerald-50/90 border-2 border-emerald-300 rounded-2xl p-3.5 text-xs text-emerald-950 space-y-1.5 shadow-xs">
+                <div className="flex items-center gap-2 font-bold text-emerald-900">
+                  <ShieldCheck className="w-5 h-5 text-emerald-600 shrink-0" />
+                  <span>{isGu ? 'આ ફોનમાં અગાઉ સાચવેલો હિસાબ સુરક્ષિત છે!' : 'Existing Data Found on This Phone!'}</span>
+                </div>
+                <p className="text-[11px] text-emerald-850 leading-relaxed">
+                  {isGu
+                    ? `આ ઉપકરણ પર તમારા ${nativeVaultFound.transactionCount || 0} વ્યવહારો અને ${nativeVaultFound.diaryCount || 0} ડાયરી નોંધો મોજૂદ છે. તમારા ૧૨ ગુપ્ત શબ્દો દાખલ કરીને તેને તરત જ અનલોક કરો.`
+                    : `Found ${nativeVaultFound.transactionCount || 0} transactions and ${nativeVaultFound.diaryCount || 0} diary entries on this device. Enter your 12 words to unlock and restore everything.`}
+                </p>
               </div>
-              <p className="text-[11px] leading-relaxed text-emerald-900/90">
-                {isGu
-                  ? 'શબ્દો વચ્ચે એક સ્પેસ રાખીને ૧૨ શબ્દો લખો અથવા નીચે આપેલા બટનથી પેસ્ટ કરો.'
-                  : 'Separate each word with a single space or click the paste button below.'}
-              </p>
+            ) : (
+              <div className="bg-emerald-50/70 border border-emerald-200/90 rounded-2xl p-3 text-xs text-emerald-950 space-y-1">
+                <div className="flex items-center gap-1.5 font-bold text-emerald-900">
+                  <KeyRound className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span>{isGu ? '૧૨ ગુપ્ત શબ્દો (Passphrase)' : '12 Secret Recovery Words'}</span>
+                </div>
+                <p className="text-[11px] leading-relaxed text-emerald-900/90">
+                  {isGu
+                    ? 'શબ્દો વચ્ચે એક સ્પેસ રાખીને ૧૨ શબ્દો લખો અથવા નીચે આપેલા બટનથી પેસ્ટ કરો.'
+                    : 'Separate each word with a single space or click the paste button below.'}
+                </p>
+              </div>
+            )}
+
+            {/* Optional Backup File (.edb / .json) Selector */}
+            <div className="space-y-1.5">
+              <label className="block text-xs font-semibold uppercase tracking-wider text-stone-600">
+                {isGu ? 'અથવા બેકઅપ ફાઈલ પસંદ કરો (વૈકલ્પિક)' : 'Or Select Backup File (Optional)'}
+              </label>
+              <input
+                type="file"
+                ref={fileInputRef}
+                accept=".edb,.json"
+                className="hidden"
+                onChange={(e) => {
+                  if (e.target.files && e.target.files[0]) {
+                    setSelectedBackupFile(e.target.files[0]);
+                  }
+                }}
+              />
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                className={`w-full py-2.5 px-3 rounded-xl border-2 border-dashed flex items-center justify-center gap-2 text-xs font-bold transition cursor-pointer ${
+                  selectedBackupFile
+                    ? 'border-emerald-500 bg-emerald-50/60 text-emerald-900'
+                    : 'border-stone-300 hover:border-emerald-400 text-stone-600 bg-stone-50/50'
+                }`}
+              >
+                <FileText className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span className="truncate">
+                  {selectedBackupFile
+                    ? selectedBackupFile.name
+                    : (isGu ? 'બેકઅપ ફાઈલ (.edb / .json) પસંદ કરો' : 'Choose Backup File (.edb / .json)')}
+                </span>
+              </button>
             </div>
 
             <div>
@@ -810,18 +944,22 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
               </div>
             </div>
 
-            <div className="bg-amber-50/70 border border-amber-200/90 rounded-2xl p-3 text-[11px] text-amber-900 leading-relaxed">
-              {isGu
-                ? '💡 એકાઉન્ટ સેટ થયા પછી, સેટિંગ્સ > ડેટા બેકઅપમાંથી તમે જૂની બેકઅપ ફાઈલ (.edb) પણ ઈમ્પોર્ટ કરી શકશો.'
-                : '💡 Once your account is restored, you can import your existing encrypted backup (.edb file) from Settings > Backup & Restore.'}
-            </div>
-
             <button
               type="submit"
-              className="w-full mt-2 py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs sm:text-sm shadow-sm transition flex items-center justify-center gap-2 cursor-pointer"
+              disabled={isRestoring}
+              className="w-full mt-2 py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold text-xs sm:text-sm shadow-sm transition flex items-center justify-center gap-2 cursor-pointer"
             >
-              <Check className="w-4 h-4" />
-              <span>{isGu ? 'એકાઉન્ટ પુનઃપ્રાપ્ત કરો અને શરૂ કરો' : 'Restore & Enter App'}</span>
+              {isRestoring ? (
+                <>
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                  <span>{isGu ? 'ડેટા પુનઃસ્થાપિત થઈ રહ્યો છે...' : 'Restoring Data...'}</span>
+                </>
+              ) : (
+                <>
+                  <Check className="w-4 h-4" />
+                  <span>{isGu ? 'ડેટા પુનઃપ્રાપ્ત કરો અને શરૂ કરો' : 'Restore All Data & Start'}</span>
+                </>
+              )}
             </button>
 
             <button
