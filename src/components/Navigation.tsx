@@ -1,14 +1,14 @@
 import React from 'react';
 import { 
   Home, 
+  BookOpen, 
   FileText, 
   Settings, 
-  User, 
-  Info 
+  User 
 } from 'lucide-react';
 import { TranslationStrings } from '../data/languages';
 
-export type NavTab = 'home' | 'report' | 'settings' | 'profile' | 'about';
+export type NavTab = 'home' | 'diary' | 'report' | 'profile' | 'settings';
 
 interface NavigationProps {
   currentTab: NavTab;
@@ -23,10 +23,10 @@ export const Navigation: React.FC<NavigationProps> = ({
 }) => {
   const navItems = [
     { id: 'home' as NavTab, label: t.home, icon: Home },
+    { id: 'diary' as NavTab, label: t.diary, icon: BookOpen },
     { id: 'report' as NavTab, label: t.report, icon: FileText },
-    { id: 'settings' as NavTab, label: t.settings, icon: Settings },
     { id: 'profile' as NavTab, label: t.profile, icon: User },
-    { id: 'about' as NavTab, label: t.about, icon: Info },
+    { id: 'settings' as NavTab, label: t.settings, icon: Settings },
   ];
 
   return (
@@ -73,4 +73,3 @@ export const Navigation: React.FC<NavigationProps> = ({
     </nav>
   );
 };
-

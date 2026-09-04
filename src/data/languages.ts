@@ -38,6 +38,7 @@ export interface TranslationStrings {
   addIncome: string;
   addExpense: string;
   home: string;
+  diary: string;
   report: string;
   aiAssistant: string;
   settings: string;
@@ -79,23 +80,43 @@ export interface TranslationStrings {
   totalIncome: string;
   totalExpense: string;
   netSavings: string;
+  // Phase 2 additions
+  newDiaryEntry: string;
+  diaryLock: string;
+  security: string;
+  pin: string;
+  enterPin: string;
+  setPin: string;
+  confirmPin: string;
+  forgotPin: string;
+  recoveryPhrase: string;
+  passphraseWarning: string;
+  biometrics: string;
+  encryptedBackup: string;
+  cloudVault: string;
+  evidence: string;
+  boxLayout: string;
+  cardLayout: string;
+  reminderTitle: string;
+  reminderBody: string;
 }
 
-export const TRANSLATIONS: Record<string, TranslationStrings> = {
+export const TRANSLATIONS: Record<string, Partial<TranslationStrings>> = {
   gu: {
-    appName: 'ખર્ચ ડાયરી AI',
-    appSubtitle: 'મલ્ટી-OS સ્માર્ટ ફાયનાન્શિયલ ડાયરી',
+    appName: 'ખર્ચ ડાયરી',
+    appSubtitle: 'સ્માર્ટ અને સુરક્ષિત ફાયનાન્શિયલ ડાયરી',
     income: 'આવક',
     expense: 'ખર્ચ',
     balance: 'શિલ્લક (બેલેન્સ)',
     addIncome: 'આવક ઉમેરો',
     addExpense: 'ખર્ચ ઉમેરો',
     home: 'હોમ',
+    diary: 'ડાયરી',
     report: 'રિપોર્ટ',
-    aiAssistant: 'AI સહાયક',
-    settings: 'સેટિંગ',
+    aiAssistant: 'સહાયક',
+    settings: 'સેટિંગ્સ',
     profile: 'પ્રોફાઈલ',
-    about: 'એબાઉટ',
+    about: 'વિશે (About)',
     amount: 'રકમ',
     category: 'કેટેગરી',
     title: 'શીર્ષક / વિગત',
@@ -132,18 +153,37 @@ export const TRANSLATIONS: Record<string, TranslationStrings> = {
     totalIncome: 'કુલ આવક',
     totalExpense: 'કુલ ખર્ચ',
     netSavings: 'ચોખ્ખી બચત',
+    newDiaryEntry: 'નવી નોંધ',
+    diaryLock: 'ડાયરી લૉક',
+    security: 'સુરક્ષા અને પિન',
+    pin: 'સુરક્ષા પિન',
+    enterPin: 'પિન દાખલ કરો',
+    setPin: 'નવો પિન સેટ કરો',
+    confirmPin: 'પિન કન્ફર્મ કરો',
+    forgotPin: 'પિન ભૂલી ગયા?',
+    recoveryPhrase: '૧૨ શબ્દોની રિકવરી કી',
+    passphraseWarning: 'આ ૧૨ શબ્દો હંમેશા સુરક્ષિત જગ્યાએ નોંધી રાખો. જો પિન ભૂલી જશો તો આના વગર ડેટા રિકવર નહીં થઈ શકે.',
+    biometrics: 'બાયોમેટ્રિક લૉક',
+    encryptedBackup: 'એન્ક્રિપ્ટેડ લોકલ બેકઅપ',
+    cloudVault: 'ઝીરો-નોલેજ ક્લાઉડ વોલ્ટ',
+    evidence: 'ઓરિજિનલ પુરાવો',
+    boxLayout: 'બોક્સ લેઆઉટ',
+    cardLayout: 'મિનિમલ કાર્ડ',
+    reminderTitle: 'દૈનિક ખર્ચ નોંધણી સમય',
+    reminderBody: 'આજના બાકી રહેલા ખર્ચાઓ અને વ્યવહારો નોંધવાનું ભૂલતા નહીં.',
   },
   en: {
-    appName: 'Expense Diary AI',
-    appSubtitle: 'Multi-OS Smart Financial Diary',
+    appName: 'Expense Diary',
+    appSubtitle: 'Smart & Secure Financial Diary',
     income: 'Income',
     expense: 'Expense',
     balance: 'Net Balance',
     addIncome: 'Add Income',
     addExpense: 'Add Expense',
     home: 'Home',
+    diary: 'Diary',
     report: 'Report',
-    aiAssistant: 'AI Brain',
+    aiAssistant: 'Assistant',
     settings: 'Settings',
     profile: 'Profile',
     about: 'About',
@@ -1105,5 +1145,10 @@ export const TRANSLATIONS: Record<string, TranslationStrings> = {
 };
 
 export function getTranslation(lang: string): TranslationStrings {
-  return TRANSLATIONS[lang] || TRANSLATIONS['gu'] || TRANSLATIONS['en'];
+  const baseEn = (TRANSLATIONS['en'] || {}) as TranslationStrings;
+  const langObj = TRANSLATIONS[lang] || (lang === 'gu' ? TRANSLATIONS['gu'] : {}) || {};
+  return {
+    ...baseEn,
+    ...langObj,
+  } as TranslationStrings;
 }

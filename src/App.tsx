@@ -1,29 +1,38 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Sparkles, 
-  DownloadCloud, 
   Globe, 
-  User
+  User, 
+  BookOpen, 
+  Lock 
 } from 'lucide-react';
-import { Transaction, TransactionType, Category, UserProfile, PendingAIMessage } from './types';
+import { 
+  Transaction, 
+  TransactionType, 
+  Category, 
+  UserProfile, 
+  PendingAIMessage, 
+  DiaryEntry, 
+  SecurityConfig 
+} from './types';
 import { getTranslation, LANGUAGES } from './data/languages';
 import { DEFAULT_CATEGORIES, INITIAL_TRANSACTIONS, INITIAL_USER_PROFILE } from './data/initialData';
 import { HomeScreen } from './components/HomeScreen';
 import { ReportScreen } from './components/ReportScreen';
 import { SettingsScreen } from './components/SettingsScreen';
 import { ProfileScreen } from './components/ProfileScreen';
-import { AboutScreen } from './components/AboutScreen';
+import { DiaryScreen } from './components/DiaryScreen';
 import { Navigation, NavTab } from './components/Navigation';
 import { TransactionModal } from './components/TransactionModal';
 import { OnboardingModal } from './components/OnboardingModal';
 import { AIAssistantModal } from './components/AIAssistantModal';
 import { AndroidSMSPermissionModal } from './components/AndroidSMSPermissionModal';
-import { usePWAInstall } from './hooks/usePWAInstall';
+import { AuthLockScreen } from './components/AuthLockScreen';
+import { checkAndTriggerDailyReminder } from './services/notifications';
+import { hashWithPBKDF2 } from './services/security';
 
 export default function App() {
-  const { isInstallable, install } = usePWAInstall();
-
-  // Persistent Language State - English is the default
+  // Persistent Language State
   const [currentLang, setCurrentLang] = useState<string>(() => {
     return localStorage.getItem('expense_diary_lang') || 'en';
   });
@@ -39,10 +48,46 @@ export default function App() {
     return localStorage.getItem('expense_diary_currency') || '₹';
   });
 
-  // Active Navigation Tab
+  // Active Navigation Tab: 'home' | 'diary' | 'report' | 'profile' | 'settings'
   const [currentTab, setCurrentTab] = useState<NavTab>('home');
 
-  // Onboarding Modal state for first-run
+  // Security Configuration & Lock State
+  const [securityConfig, setSecurityConfig] = useState<SecurityConfig>(() => {
+    const saved = localStorage.getItem('expense_diary_security_config');
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch {
+        // fallback
+      }
+    }
+    return {
+      hasCompletedSetup: false,
+      isLocked: false,
+      biometricsEnabled: false,
+      autoLockMinutes: 5,
+      diaryLockEnabled: false,
+    };
+  });
+
+  const [savedPassphraseWords, setSavedPassphraseWords] = useState<string[]>(() => {
+    const saved = localStorage.getItem('expense_diary_recovery_words');
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch {
+        return [];
+      }
+    }
+    return [];
+  });
+
+  // Runtime Lock State
+  const [isAppLocked, setIsAppLocked] = useState<boolean>(() => {
+    return securityConfig.hasCompletedSetup && !!securityConfig.pinHash;
+  });
+
+  // First-run Onboarding State
   const [showOnboarding, setShowOnboarding] = useState<boolean>(() => {
     return !localStorage.getItem('expense_diary_onboarded');
   });
@@ -50,20 +95,33 @@ export default function App() {
   // Android SMS Permission modal state
   const [isSmsModalOpen, setIsSmsModalOpen] = useState(false);
 
-  // AI Assistant drawer / modal state
+  // Assistant drawer / modal state
   const [isAiModalOpen, setIsAiModalOpen] = useState(false);
 
-  // Clean initial transactions (starts empty, user-driven)
+  // Transactions State
   const [transactions, setTransactions] = useState<Transaction[]>(() => {
     const saved = localStorage.getItem('expense_diary_transactions');
     if (saved) {
       try {
         return JSON.parse(saved);
-      } catch (e) {
+      } catch {
         return INITIAL_TRANSACTIONS;
       }
     }
     return INITIAL_TRANSACTIONS;
+  });
+
+  // Personal Diary Entries State
+  const [diaryEntries, setDiaryEntries] = useState<DiaryEntry[]>(() => {
+    const saved = localStorage.getItem('expense_diary_entries');
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch {
+        return [];
+      }
+    }
+    return [];
   });
 
   // Categories State
@@ -72,7 +130,7 @@ export default function App() {
     if (saved) {
       try {
         return JSON.parse(saved);
-      } catch (e) {
+      } catch {
         return DEFAULT_CATEGORIES;
       }
     }
@@ -85,20 +143,20 @@ export default function App() {
     if (saved) {
       try {
         return JSON.parse(saved);
-      } catch (e) {
+      } catch {
         return INITIAL_USER_PROFILE;
       }
     }
     return INITIAL_USER_PROFILE;
   });
 
-  // Pending AI auto-detected notifications (starts empty, no fake mock Swiggy alert)
+  // Pending detected notifications
   const [pendingAiMessages, setPendingAiMessages] = useState<PendingAIMessage[]>(() => {
     const saved = localStorage.getItem('expense_diary_pending_ai');
     if (saved) {
       try {
         return JSON.parse(saved);
-      } catch (e) {
+      } catch {
         return [];
       }
     }
@@ -109,10 +167,14 @@ export default function App() {
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [addModalType, setAddModalType] = useState<TransactionType>('expense');
 
-  // Sync to localStorage
+  // Persistence Effects
   useEffect(() => {
     localStorage.setItem('expense_diary_transactions', JSON.stringify(transactions));
   }, [transactions]);
+
+  useEffect(() => {
+    localStorage.setItem('expense_diary_entries', JSON.stringify(diaryEntries));
+  }, [diaryEntries]);
 
   useEffect(() => {
     localStorage.setItem('expense_diary_categories', JSON.stringify(categories));
@@ -121,6 +183,14 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('expense_diary_profile', JSON.stringify(profile));
   }, [profile]);
+
+  useEffect(() => {
+    localStorage.setItem('expense_diary_security_config', JSON.stringify(securityConfig));
+  }, [securityConfig]);
+
+  useEffect(() => {
+    localStorage.setItem('expense_diary_recovery_words', JSON.stringify(savedPassphraseWords));
+  }, [savedPassphraseWords]);
 
   useEffect(() => {
     localStorage.setItem('expense_diary_pending_ai', JSON.stringify(pendingAiMessages));
@@ -146,57 +216,114 @@ export default function App() {
   const t = getTranslation(currentLang);
   const isGu = currentLang === 'gu';
 
-  // Transaction handlers
+  // Auto-Lock Management
+  useEffect(() => {
+    let lastHiddenTimestamp = 0;
+
+    const handleVisibilityChange = () => {
+      if (!securityConfig.hasCompletedSetup || !securityConfig.pinHash) return;
+
+      if (document.visibilityState === 'hidden') {
+        lastHiddenTimestamp = Date.now();
+      } else if (document.visibilityState === 'visible') {
+        const timeoutMinutes = securityConfig.autoLockMinutes;
+        if (timeoutMinutes === 0) {
+          setIsAppLocked(true);
+        } else if (timeoutMinutes > 0 && lastHiddenTimestamp > 0) {
+          const elapsedMinutes = (Date.now() - lastHiddenTimestamp) / 60000;
+          if (elapsedMinutes >= timeoutMinutes) {
+            setIsAppLocked(true);
+          }
+        }
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [securityConfig]);
+
+  // Daily Reminder Interval
+  useEffect(() => {
+    const checkReminder = () => {
+      checkAndTriggerDailyReminder(
+        profile.enableDailyReminder,
+        profile.dailyReminderTime || '20:00',
+        { reminderTitle: t.reminderTitle, reminderBody: t.reminderBody }
+      );
+    };
+
+    checkReminder();
+    const interval = setInterval(checkReminder, 60000);
+    return () => clearInterval(interval);
+  }, [profile.enableDailyReminder, profile.dailyReminderTime, t]);
+
+  // Transaction Handlers
   const handleOpenAddModal = (type: TransactionType) => {
     setAddModalType(type);
     setIsAddModalOpen(true);
   };
 
-  const handleAddTransaction = (tx: Omit<Transaction, 'id'>) => {
-    const newTx: Transaction = {
-      ...tx,
-      id: `tx-${Date.now()}`,
+  const handleAddTransaction = (newTx: Omit<Transaction, 'id'>) => {
+    const tx: Transaction = {
+      ...newTx,
+      id: `tx-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
     };
-    setTransactions((prev) => [newTx, ...prev]);
+    setTransactions((prev) => [tx, ...prev]);
   };
 
   const handleDeleteTransaction = (id: string) => {
     setTransactions((prev) => prev.filter((t) => t.id !== id));
   };
 
-  // AI confirmation handlers
-  const handleConfirmAiMessage = (messageId: string, customCategory?: string) => {
-    const msg = pendingAiMessages.find((m) => m.id === messageId);
-    if (msg) {
-      const newTx: Transaction = {
-        id: `tx-ai-${Date.now()}`,
-        type: msg.parsedData.type,
-        amount: msg.parsedData.amount,
-        title: msg.parsedData.title,
-        category: customCategory || msg.parsedData.category,
-        date: new Date().toISOString().split('T')[0],
-        time: new Date().toTimeString().split(' ')[0].substring(0, 5),
-        vendorOrPerson: msg.parsedData.vendorOrPerson,
-        paymentMode: msg.parsedData.paymentMode || 'UPI',
-        notes: msg.parsedData.notes || (isGu ? 'AI આપમેળે શોધાયેલ વ્યવહાર' : 'Auto-detected by AI'),
-        isAiGenerated: true,
-      };
-      setTransactions((prev) => [newTx, ...prev]);
-      setPendingAiMessages((prev) => prev.filter((m) => m.id !== messageId));
-    }
+  // Diary Handlers
+  const handleSaveDiaryEntry = (entry: DiaryEntry) => {
+    setDiaryEntries((prev) => {
+      const idx = prev.findIndex((e) => e.id === entry.id);
+      if (idx >= 0) {
+        const updated = [...prev];
+        updated[idx] = entry;
+        return updated;
+      }
+      return [entry, ...prev];
+    });
   };
 
-  const handleDismissAiMessage = (messageId: string) => {
-    setPendingAiMessages((prev) => prev.filter((m) => m.id !== messageId));
+  const handleDeleteDiaryEntry = (id: string) => {
+    setDiaryEntries((prev) => prev.filter((e) => e.id !== id));
+  };
+
+  // Pending AI auto-detect Handlers
+  const handleConfirmAiMessage = (msg: PendingAIMessage) => {
+    const newTx: Transaction = {
+      id: `tx-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
+      type: msg.parsedData.type,
+      amount: msg.parsedData.amount,
+      title: msg.parsedData.title,
+      category: msg.parsedData.category,
+      date: new Date().toISOString().split('T')[0],
+      time: new Date().toTimeString().split(' ')[0].substring(0, 5),
+      paymentMode: msg.parsedData.paymentMode,
+      vendorOrPerson: msg.parsedData.vendorOrPerson,
+      notes: msg.parsedData.notes,
+      evidence: msg.rawText,
+      evidenceSource: 'sms',
+      isAiGenerated: true,
+    };
+    setTransactions((prev) => [newTx, ...prev]);
+    setPendingAiMessages((prev) => prev.filter((m) => m.id !== msg.id));
+  };
+
+  const handleDismissAiMessage = (id: string) => {
+    setPendingAiMessages((prev) => prev.filter((m) => m.id !== id));
   };
 
   const handleAddPendingAiMessage = (msg: PendingAIMessage) => {
     setPendingAiMessages((prev) => [msg, ...prev]);
   };
 
-  // Categories & Profile handlers
-  const handleAddCategory = (newCat: Category) => {
-    setCategories((prev) => [...prev, newCat]);
+  // Category & Profile Handlers
+  const handleAddCategory = (cat: Category) => {
+    setCategories((prev) => [...prev, cat]);
   };
 
   const handleDeleteCategory = (catId: string) => {
@@ -207,19 +334,50 @@ export default function App() {
     setProfile((prev) => ({ ...prev, ...updated }));
   };
 
+  const handleUpdateSecurityConfig = (updated: Partial<SecurityConfig>) => {
+    setSecurityConfig((prev) => ({ ...prev, ...updated }));
+  };
+
   const handleRestoreTransactions = (txs: Transaction[]) => {
     setTransactions(txs);
   };
 
-  // Onboarding completion
-  const handleOnboardingComplete = (name: string, selectedCurrency: string, budget: number) => {
+  const handleRestoreDiaryEntries = (entries: DiaryEntry[]) => {
+    setDiaryEntries(entries);
+  };
+
+  // Reset PIN with Passphrase
+  const handleResetPinWithPassphrase = async (newPin: string) => {
+    const { hash: pinHash, salt: pinSalt } = await hashWithPBKDF2(newPin);
+    setSecurityConfig((prev) => ({
+      ...prev,
+      pinHash,
+      pinSalt,
+    }));
+  };
+
+  // Onboarding Complete
+  const handleOnboardingComplete = (data: {
+    name: string;
+    currency: string;
+    budget: number;
+    securityConfig: SecurityConfig;
+    passphraseWords: string[];
+    dailyReminderTime: string;
+    enableDailyReminder: boolean;
+  }) => {
     setProfile((prev) => ({
       ...prev,
-      name,
-      monthlyBudget: budget,
-      currency: selectedCurrency,
+      name: data.name,
+      monthlyBudget: data.budget,
+      currency: data.currency,
+      dailyReminderTime: data.dailyReminderTime,
+      enableDailyReminder: data.enableDailyReminder,
     }));
-    setCurrency(selectedCurrency);
+    setCurrency(data.currency);
+    setSecurityConfig(data.securityConfig);
+    setSavedPassphraseWords(data.passphraseWords);
+    setIsAppLocked(false);
     localStorage.setItem('expense_diary_onboarded', 'true');
     setShowOnboarding(false);
   };
@@ -237,7 +395,7 @@ export default function App() {
     }
   };
 
-  // App Theme class resolver
+  // App Theme background
   const getThemeBackground = () => {
     switch (activeTheme) {
       case 'mint':
@@ -257,7 +415,18 @@ export default function App() {
       id="app-root-container"
       className={`min-h-screen ${getThemeBackground()} ${getFontFamilyClass()} text-stone-800 transition-colors duration-200 flex flex-col`}
     >
-      {/* Onboarding Modal for First Time Users */}
+      {/* 1. App Lock Screen (Full Screen PIN Overlay) */}
+      {isAppLocked && securityConfig.hasCompletedSetup && securityConfig.pinHash && (
+        <AuthLockScreen
+          securityConfig={securityConfig}
+          onUnlock={() => setIsAppLocked(false)}
+          onResetPinWithPassphrase={handleResetPinWithPassphrase}
+          currentLang={currentLang}
+          t={t}
+        />
+      )}
+
+      {/* 2. Onboarding Modal for First Time Users */}
       {showOnboarding && (
         <OnboardingModal
           onComplete={handleOnboardingComplete}
@@ -267,13 +436,12 @@ export default function App() {
         />
       )}
 
-      {/* Top Header Bar with Safe-Area Inset Support */}
+      {/* Top Header Bar */}
       <header
         id="app-top-header"
         className="sticky top-0 z-30 border-b border-stone-200/80 bg-white/90 backdrop-blur-md transition-all pt-[env(safe-area-inset-top,0px)]"
       >
         <div className="max-w-3xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between">
-          {/* Greeting & Date */}
           <div
             className="flex flex-col cursor-pointer select-none"
             onClick={() => setCurrentTab('home')}
@@ -296,20 +464,30 @@ export default function App() {
             </p>
           </div>
 
-          {/* Header Controls */}
           <div className="flex items-center gap-2 sm:gap-2.5">
-            {/* AI Assistant Quick Trigger Pill */}
+            {/* Quick Lock Button */}
+            {securityConfig.hasCompletedSetup && securityConfig.pinHash && (
+              <button
+                onClick={() => setIsAppLocked(true)}
+                className="p-2 rounded-full text-stone-400 hover:text-stone-700 hover:bg-stone-100 transition cursor-pointer"
+                title={isGu ? 'લૉક કરો' : 'Lock App'}
+              >
+                <Lock className="w-4 h-4" />
+              </button>
+            )}
+
+            {/* Smart Assistant Trigger */}
             <button
               id="header-ai-assistant-btn"
               onClick={() => setIsAiModalOpen(true)}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-xs font-semibold transition cursor-pointer"
-              title="AI Assistant"
+              title={t.aiAssistant}
             >
               <Sparkles className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">AI Assistant</span>
+              <span className="hidden sm:inline">{t.aiAssistant}</span>
             </button>
 
-            {/* Quick Language Selector */}
+            {/* Language Selector */}
             <div className="relative flex items-center bg-white border border-stone-200 hover:border-stone-300 rounded-full px-2.5 py-1 text-xs shadow-xs transition cursor-pointer">
               <Globe className="w-3.5 h-3.5 text-stone-400 pointer-events-none mr-1" />
               <select
@@ -361,10 +539,35 @@ export default function App() {
           />
         )}
 
+        {currentTab === 'diary' && (
+          <DiaryScreen
+            entries={diaryEntries}
+            onSaveEntry={handleSaveDiaryEntry}
+            onDeleteEntry={handleDeleteDiaryEntry}
+            securityConfig={securityConfig}
+            onUpdateSecurityConfig={handleUpdateSecurityConfig}
+            transactions={transactions}
+            currentLang={currentLang}
+            t={t}
+            currency={currency}
+          />
+        )}
+
         {currentTab === 'report' && (
           <ReportScreen
             transactions={transactions}
             categories={categories}
+            t={t}
+            currency={currency}
+            currentLang={currentLang}
+          />
+        )}
+
+        {currentTab === 'profile' && (
+          <ProfileScreen
+            profile={profile}
+            onUpdateProfile={handleUpdateProfile}
+            transactions={transactions}
             t={t}
             currency={currency}
             currentLang={currentLang}
@@ -389,35 +592,22 @@ export default function App() {
             onSelectCurrency={setCurrency}
             transactions={transactions}
             onRestoreTransactions={handleRestoreTransactions}
+            diaryEntries={diaryEntries}
+            onRestoreDiaryEntries={handleRestoreDiaryEntries}
+            securityConfig={securityConfig}
+            onUpdateSecurityConfig={handleUpdateSecurityConfig}
+            savedPassphraseWords={savedPassphraseWords}
             onOpenSMSModal={() => setIsSmsModalOpen(true)}
-          />
-        )}
-
-        {currentTab === 'profile' && (
-          <ProfileScreen
-            profile={profile}
-            onUpdateProfile={handleUpdateProfile}
-            transactions={transactions}
-            t={t}
-            currency={currency}
-            currentLang={currentLang}
-          />
-        )}
-
-        {currentTab === 'about' && (
-          <AboutScreen
-            t={t}
-            currentLang={currentLang}
           />
         )}
       </main>
 
-      {/* Floating AI Assistant FAB Button (Accessible from any screen) */}
+      {/* Floating Assistant FAB Button */}
       <button
         id="ai-assistant-floating-btn"
         onClick={() => setIsAiModalOpen(true)}
         className="fixed right-4 bottom-20 sm:bottom-24 z-30 p-3.5 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white shadow-lg shadow-indigo-600/30 transition-all hover:scale-105 active:scale-95 flex items-center justify-center cursor-pointer"
-        title="Open AI Assistant"
+        title={t.aiAssistant}
       >
         <Sparkles className="w-5 h-5" />
       </button>
@@ -441,7 +631,7 @@ export default function App() {
         currentLang={currentLang}
       />
 
-      {/* AI Assistant Modal */}
+      {/* Assistant Modal */}
       <AIAssistantModal
         isOpen={isAiModalOpen}
         onClose={() => setIsAiModalOpen(false)}
@@ -459,7 +649,6 @@ export default function App() {
         isOpen={isSmsModalOpen}
         onClose={() => setIsSmsModalOpen(false)}
         onGrantPermission={() => {
-          // Trigger native Android SMS permission or local storage marker
           localStorage.setItem('expense_diary_sms_granted', 'true');
         }}
         currentLang={currentLang}

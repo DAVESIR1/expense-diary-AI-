@@ -14,6 +14,36 @@ export interface Transaction {
   notes?: string;
   isAiGenerated?: boolean;
   needsConfirmation?: boolean;
+  evidence?: string;
+  evidenceSource?: 'sms' | 'notification' | 'manual';
+  referenceNumber?: string;
+}
+
+export interface DiaryEntry {
+  id: string;
+  date: string; // YYYY-MM-DD
+  time: string; // HH:mm
+  title: string;
+  content: string;
+  mood?: 'happy' | 'neutral' | 'sad' | 'excited' | 'stressed' | 'peaceful';
+  tags?: string[];
+  linkedExpenseIds?: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SecurityConfig {
+  hasCompletedSetup: boolean;
+  isLocked: boolean;
+  pinHash?: string;
+  pinSalt?: string;
+  biometricsEnabled: boolean;
+  autoLockMinutes: number; // 0 for immediate, 1, 5, 15, -1 for disabled
+  recoveryWordsHash?: string;
+  recoveryWordsSalt?: string;
+  diaryPinHash?: string;
+  diaryPinSalt?: string;
+  diaryLockEnabled: boolean;
 }
 
 export interface Category {
@@ -46,10 +76,12 @@ export interface ReportFilter {
   category?: string;
   personQuery?: string;
   typeFilter?: 'all' | 'income' | 'expense';
+  selectedCategories?: string[];
+  includeEvidence?: boolean;
 }
 
 export type PageTheme = 'paper' | 'mint' | 'lavender' | 'amber' | 'slate' | 'white';
-export type LayoutStyle = 'ruled' | 'box' | 'minimal';
+export type LayoutStyle = 'box' | 'minimal';
 
 export interface ReportDesign {
   pageTheme: PageTheme;
