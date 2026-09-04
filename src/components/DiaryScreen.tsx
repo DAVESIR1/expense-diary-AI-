@@ -19,11 +19,14 @@ import {
   CheckCircle2,
   Clock,
   Phone,
-  User as UserIcon
+  User as UserIcon,
+  Fingerprint,
+  Shield,
+  KeyRound
 } from 'lucide-react';
 import { DiaryEntry, SecurityConfig, Transaction, BorrowedLentRecord, BorrowLendDirection, BorrowLendStatus } from '../types';
 import { TranslationStrings } from '../data/languages';
-import { verifyPBKDF2 } from '../services/security';
+import { verifyPBKDF2, hashWithPBKDF2 } from '../services/security';
 
 interface DiaryScreenProps {
   entries: DiaryEntry[];
@@ -58,6 +61,8 @@ export const DiaryScreen: React.FC<DiaryScreenProps> = ({
   onSaveBorrowLent,
   onDeleteBorrowLent,
   securityConfig,
+  onUpdateSecurityConfig,
+  transactions,
   currentLang,
   t,
   currency,
@@ -103,6 +108,42 @@ export const DiaryScreen: React.FC<DiaryScreenProps> = ({
   const [blDueDate, setBLDueDate] = useState('');
   const [blNote, setBLNote] = useState('');
   const [blStatusFilter, setBLStatusFilter] = useState<'all' | BorrowLendStatus>('all');
+
+  // Custom Diary PIN setup
+  const [showPinSetup, setShowPinSetup] = useState(false);
+  const [newDiaryPin, setNewDiaryPin] = useState('');
+  const [confirmDiaryPin, setConfirmDiaryPin] = useState('');
+  const [pinSetupError, setPinSetupError] = useState<string | null>(null);
+  const [pinSetupSuccess, setPinSetupSuccess] = useState(false);
+
+  const handleSetDiaryPin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPinSetupError(null);
+    setPinSetupSuccess(false);
+
+    if (newDiaryPin.length < 4) {
+      setPinSetupError(isGu ? 'પિન ઓછામાં ઓછો 4 અંકનો હોવો જોઈએ.' : 'PIN must be at least 4 digits.');
+      return;
+    }
+    if (newDiaryPin !== confirmDiaryPin) {
+      setPinSetupError(isGu ? 'પિન મેચ થતો નથી. ફરી દાખલ કરો.' : 'PINs do not match. Try again.');
+      return;
+    }
+
+    const { hash, salt } = await hashWithPBKDF2(newDiaryPin);
+    onUpdateSecurityConfig({
+      diaryPinHash: hash,
+      diaryPinSalt: salt,
+      diaryLockEnabled: true,
+    });
+    setPinSetupSuccess(true);
+    setNewDiaryPin('');
+    setConfirmDiaryPin('');
+    setTimeout(() => {
+      setShowPinSetup(false);
+      setPinSetupSuccess(false);
+    }, 1500);
+  };
 
   // Unlock Diary
   const handleUnlockDiary = async (e: React.FormEvent) => {
@@ -369,6 +410,70 @@ export const DiaryScreen: React.FC<DiaryScreenProps> = ({
             {isGu ? 'ઉછીના પૈસા' : 'Borrowed / Lent'}
           </button>
         </div>
+      </div>
+
+      {/* Diary PIN Setup Card */}
+      <div className="p-4 sm:p-5 rounded-3xl bg-white border border-stone-200 shadow-xs space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <KeyRound className="w-4 h-4 text-indigo-600 stroke-[2]" />
+            <h3 className="text-xs font-bold text-stone-800">
+              {isGu ? 'ડાયરી સુરક્ષા પિન' : 'Diary Security PIN'}
+            </h3>
+          </div>
+          <button
+            onClick={() => { setShowPinSetup(!showPinSetup); setPinSetupError(null); setPinSetupSuccess(false); }}
+            className="px-3 py-1.5 rounded-xl text-xs font-semibold transition cursor-pointer border border-stone-200 hover:bg-stone-50 text-stone-600"
+          >
+            {securityConfig.diaryPinHash
+              ? (isGu ? 'પિન બદલો' : 'Change PIN')
+              : (isGu ? 'પિન સેટ કરો' : 'Set PIN')}
+          </button>
+        </div>
+
+        <p className="text-[11px] text-stone-500">
+          {securityConfig.diaryPinHash
+            ? (isGu ? '✅ ડાયરી માટે અલગ પિન સેટ છે.' : '✅ Custom diary PIN is active.')
+            : (isGu ? 'ડાયરી માટે અલગ સુરક્ષા પિન સેટ કરો.' : 'Set a separate PIN to protect your diary.')}
+        </p>
+
+        {showPinSetup && (
+          <form onSubmit={handleSetDiaryPin} className="space-y-2.5 pt-1">
+            {pinSetupError && (
+              <div className="p-2 bg-rose-50 border border-rose-200 text-rose-700 text-xs font-medium rounded-xl">
+                {pinSetupError}
+              </div>
+            )}
+            {pinSetupSuccess && (
+              <div className="p-2 bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs font-medium rounded-xl">
+                {isGu ? '✅ ડાયરી પિન સફળતાપૂર્વક સેટ થયો!' : '✅ Diary PIN set successfully!'}
+              </div>
+            )}
+            <input
+              type="password"
+              maxLength={6}
+              value={newDiaryPin}
+              onChange={(e) => setNewDiaryPin(e.target.value.replace(/\D/g, ''))}
+              placeholder={isGu ? 'નવો પિન (4-6 અંક)' : 'New PIN (4-6 digits)'}
+              className="w-full px-3 py-2 text-xs rounded-xl border border-stone-200 bg-stone-50 outline-none focus:border-indigo-500 font-mono tracking-widest text-center"
+            />
+            <input
+              type="password"
+              maxLength={6}
+              value={confirmDiaryPin}
+              onChange={(e) => setConfirmDiaryPin(e.target.value.replace(/\D/g, ''))}
+              placeholder={isGu ? 'પિન ફરી દાખલ કરો' : 'Confirm PIN'}
+              className="w-full px-3 py-2 text-xs rounded-xl border border-stone-200 bg-stone-50 outline-none focus:border-indigo-500 font-mono tracking-widest text-center"
+            />
+            <button
+              type="submit"
+              className="w-full py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold transition cursor-pointer flex items-center justify-center gap-1.5"
+            >
+              <Shield className="w-3.5 h-3.5" />
+              <span>{isGu ? 'પિન સેવ કરો' : 'Save PIN'}</span>
+            </button>
+          </form>
+        )}
       </div>
 
       {/* ===== JOURNAL TAB ===== */}

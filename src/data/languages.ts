@@ -107,6 +107,27 @@ export interface TranslationStrings {
   pending: string;
   settled: string;
   markSettled: string;
+  personalDiary: string;
+  diarySecurity: string;
+  setCustomDiaryPin: string;
+  lockNow: string;
+  unlockDiary: string;
+  biometricUnlock: string;
+  offlineReminderTitle: string;
+  offlineReminderBody: string;
+  snooze: string;
+  snooze1h: string;
+  snooze2h: string;
+  snooze5h: string;
+  snooze12h: string;
+  snooze1d: string;
+  appUsagePrompt: string;
+  yesAddExpense: string;
+  noExpense: string;
+  aboutTitle: string;
+  aboutDesc: string;
+  permissionsTitle: string;
+  permissionsDesc: string;
 }
 
 export const TRANSLATIONS: Record<string, Partial<TranslationStrings>> = {
@@ -142,13 +163,13 @@ export const TRANSLATIONS: Record<string, Partial<TranslationStrings>> = {
     allCategories: 'બધી કેટેગરીઝ',
     recentTransactions: 'તાજેતરના વ્યવહારો',
     noTransactions: 'હજી સુધી કોઈ વ્યવહાર નોંધાયેલ નથી.',
-    aiConfirmationTitle: 'AI આપમેળે શોધાયેલ વ્યવહાર',
+    aiConfirmationTitle: 'આપમેળે શોધાયેલ વ્યવહાર',
     confirmAdd: 'હા, ઉમેરો',
     changeCategory: 'કેટેગરી બદલો',
     ignore: 'અવગણો',
     offlineQuestion: 'શું તમે આજે દિવસ દરમિયાન ક્યાંય ઓફલાઇન અથવા રોકડ ખર્ચ કર્યો છે?',
     shoppingAppQuestion: 'તમે આજે શોપિંગ અથવા પેમેન્ટ એપ વાપરી હતી. શું ત્યાં કોઈ ખર્ચ થયો હતો?',
-    insightsTitle: 'AI નાણાકીય વિશ્લેષણ',
+    insightsTitle: 'નાણાકીય વિશ્લેષણ',
     hiddenChargesTitle: 'છૂપા ચાર્જ અને દંડથી બચવાની ચેતવણી',
     adviceTitle: 'નાણાં બચાવવાના શ્રેષ્ઠ ઉપાયો',
     dailyReminder: 'દૈનિક ઓફલાઇન ખર્ચ પૂછપરછ સમય',
@@ -187,6 +208,27 @@ export const TRANSLATIONS: Record<string, Partial<TranslationStrings>> = {
     pending: 'બાકી',
     settled: 'ચૂકતે',
     markSettled: 'ચૂકતે કરો',
+    personalDiary: 'વ્યક્તિગત ડાયરી',
+    diarySecurity: 'ડાયરી સુરક્ષા',
+    setCustomDiaryPin: 'ડાયરી માટે અલગ કસ્ટમ પિન સેટ કરો',
+    lockNow: 'હમણાં લૉક કરો',
+    unlockDiary: 'ડાયરી અનલૉક કરો',
+    biometricUnlock: 'બાયોમેટ્રિકથી અનલૉક કરો',
+    offlineReminderTitle: 'આજનો રોકડ / ઓફલાઇન ખર્ચ',
+    offlineReminderBody: 'શું તમે આજે દિવસ દરમિયાન કોઈ ઓફલાઇન કે રોકડ ખર્ચ કર્યો છે?',
+    snooze: 'પછી (સ્નૂઝ)',
+    snooze1h: '૧ કલાક',
+    snooze2h: '૨ કલાક',
+    snooze5h: '૫ કલાક',
+    snooze12h: '૧૨ કલાક',
+    snooze1d: '૧ દિવસ',
+    appUsagePrompt: 'તમે તાજેતરમાં પેમેન્ટ અથવા શોપિંગ એપ વાપરી હતી. શું ત્યાં કોઈ ખર્ચ થયો હતો?',
+    yesAddExpense: 'હા, ખર્ચ ઉમેરો',
+    noExpense: 'ના, કશું નથી થયું',
+    aboutTitle: 'એપ્લિકેશન વિશે',
+    aboutDesc: 'સંપૂર્ણ ઓફલાઇન અને પ્રાઇવેટ ફાયનાન્શિયલ ડાયરી',
+    permissionsTitle: 'સિસ્ટમ પરમિશન',
+    permissionsDesc: 'SMS, નોટિફિકેશન અને એપ યુસેજ રીડ કરવાની સુવિધા',
   },
   en: {
     appName: 'Expense Diary',
@@ -220,13 +262,13 @@ export const TRANSLATIONS: Record<string, Partial<TranslationStrings>> = {
     allCategories: 'All Categories',
     recentTransactions: 'Recent Transactions',
     noTransactions: 'No transactions recorded yet.',
-    aiConfirmationTitle: 'AI Auto-Detected Transaction',
+    aiConfirmationTitle: 'Auto-Detected Transaction',
     confirmAdd: 'Yes, Add It',
     changeCategory: 'Change Category',
     ignore: 'Dismiss',
     offlineQuestion: 'Did you make any offline or cash expenses today?',
     shoppingAppQuestion: 'You opened a payment/shopping app today. Did you spend any money there?',
-    insightsTitle: 'AI Spending Insights',
+    insightsTitle: 'Spending Insights',
     hiddenChargesTitle: 'Hidden Charges & Late Fee Alert',
     adviceTitle: 'Smart Money Saving Tips',
     dailyReminder: 'Daily Offline Expense Inquiry Time',
@@ -237,6 +279,24 @@ export const TRANSLATIONS: Record<string, Partial<TranslationStrings>> = {
     totalIncome: 'Total Income',
     totalExpense: 'Total Expense',
     netSavings: 'Net Savings',
+    newDiaryEntry: 'New Note',
+    diaryLock: 'Diary Lock',
+    security: 'Security & PIN',
+    pin: 'Security PIN',
+    enterPin: 'Enter PIN',
+    setPin: 'Set New PIN',
+    confirmPin: 'Confirm PIN',
+    forgotPin: 'Forgot PIN?',
+    recoveryPhrase: '12-Word Recovery Phrase',
+    passphraseWarning: 'Store these 12 words securely. Without them, data cannot be recovered if you forget your PIN.',
+    biometrics: 'Biometric Lock',
+    encryptedBackup: 'Encrypted Local Backup',
+    cloudVault: 'Zero-Knowledge Cloud Vault',
+    evidence: 'Original Evidence',
+    boxLayout: 'Box Layout',
+    cardLayout: 'Minimal Card',
+    reminderTitle: 'Daily Expense Check-in',
+    reminderBody: 'Do not forget to record your cash and offline expenses today.',
     borrowed: 'Borrowed',
     lent: 'Lent',
     borrowedMoney: 'Money Borrowed',
@@ -247,6 +307,27 @@ export const TRANSLATIONS: Record<string, Partial<TranslationStrings>> = {
     pending: 'Pending',
     settled: 'Settled',
     markSettled: 'Mark as Settled',
+    personalDiary: 'Personal Diary',
+    diarySecurity: 'Diary Security',
+    setCustomDiaryPin: 'Set Custom Diary PIN',
+    lockNow: 'Lock Now',
+    unlockDiary: 'Unlock Diary',
+    biometricUnlock: 'Unlock with Biometrics',
+    offlineReminderTitle: 'Daily Cash / Offline Expense',
+    offlineReminderBody: 'Did you make any cash or offline purchases today?',
+    snooze: 'Later (Snooze)',
+    snooze1h: '1 Hour',
+    snooze2h: '2 Hours',
+    snooze5h: '5 Hours',
+    snooze12h: '12 Hours',
+    snooze1d: '1 Day',
+    appUsagePrompt: 'You recently opened a payment or shopping app. Did you spend any money?',
+    yesAddExpense: 'Yes, Add Expense',
+    noExpense: 'No Expense',
+    aboutTitle: 'About Application',
+    aboutDesc: '100% Offline & Private Financial Diary',
+    permissionsTitle: 'System Permissions',
+    permissionsDesc: 'SMS, Notifications, and App Usage Access',
   },
   hi: {
     appName: 'खर्च डायरी AI',

@@ -39,6 +39,7 @@ import {
 import { verifyPBKDF2, normalizeWords } from '../services/security';
 import { SecuritySetupModal } from './SecuritySetupModal';
 import { MultiRestoreModal } from './MultiRestoreModal';
+import { NativeBridgeService, NativePermissionsStatus } from '../services/nativeBridge';
 
 interface SettingsScreenProps {
   currentLang: string;
@@ -98,6 +99,33 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   const [newCatName, setNewCatName] = useState('');
   const [newCatType, setNewCatType] = useState<'income' | 'expense'>('expense');
   const [notificationMsg, setNotificationMsg] = useState<string | null>(null);
+
+  // Native Permissions State
+  const [permStatus, setPermStatus] = useState<NativePermissionsStatus>({ sms: false, notifications: false, usage: false });
+  const [permLoading, setPermLoading] = useState(false);
+
+  // Check permissions on mount
+  useEffect(() => {
+    NativeBridgeService.checkPermissions().then(setPermStatus).catch(() => {});
+  }, []);
+
+  const handleRequestSMS = async () => {
+    setPermLoading(true);
+    const granted = await NativeBridgeService.requestSMSPermissions();
+    if (granted) setPermStatus(prev => ({ ...prev, sms: true }));
+    setPermLoading(false);
+  };
+
+  const handleRequestNotifications = async () => {
+    setPermLoading(true);
+    const granted = await NativeBridgeService.requestNotificationPermissions();
+    if (granted) setPermStatus(prev => ({ ...prev, notifications: true }));
+    setPermLoading(false);
+  };
+
+  const handleOpenUsageSettings = async () => {
+    await NativeBridgeService.openUsageSettings();
+  };
 
   // Security Setup Modal
   const [isSecurityModalOpen, setIsSecurityModalOpen] = useState(false);
@@ -785,28 +813,96 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
         </div>
       </div>
 
-      {/* 8. Android SMS Permission Section */}
+      {/* 8. Native Permissions Section (SMS + Notifications + App Usage) */}
       <div
-        id="sms-permission-card"
-        className="p-5 sm:p-6 rounded-3xl bg-emerald-50/50 border border-emerald-200 shadow-xs flex items-center justify-between gap-4"
+        id="native-permissions-card"
+        className="p-5 sm:p-6 rounded-3xl bg-white border border-stone-200 shadow-xs space-y-4"
       >
-        <div className="space-y-1">
-          <div className="flex items-center gap-2 text-emerald-950 font-bold text-xs sm:text-sm">
-            <ShieldCheck className="w-4 h-4 text-emerald-600" />
-            <span>{isGu ? 'SMS સ્માર્ટ ડિટેક્શન પરમિશન' : 'SMS Smart Detection Permission'}</span>
-          </div>
-          <p className="text-xs text-emerald-900/80">
-            {isGu
-              ? 'SMS વાંચવાની પરમિશનથી ખર્ચ આપમેળે શોધી શકાય છે.'
-              : 'Enable automatic expense detection from incoming bank alerts.'}
-          </p>
+        <div className="flex items-center gap-2">
+          <ShieldCheck className="w-4 h-4 text-emerald-600 stroke-[2]" />
+          <h3 className="text-sm font-bold text-stone-800 tracking-tight">
+            {isGu ? 'એપ પરમિશન્સ' : 'App Permissions'}
+          </h3>
         </div>
-        <button
-          onClick={onOpenSMSModal}
-          className="py-2 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold transition shrink-0 cursor-pointer"
-        >
-          {isGu ? 'મેનેજ કરો' : 'Manage'}
-        </button>
+        <p className="text-xs text-stone-500 leading-relaxed">
+          {isGu
+            ? 'આ પરમિશન્સ એપની મુખ્ય સુવિધાઓ માટે જરૂરી છે. દરેક પરમિશન માટે નીચે ટેપ કરો.'
+            : 'These permissions are required for core features. Tap each to grant access.'}
+        </p>
+
+        {/* SMS Permission */}
+        <div className="flex items-center justify-between p-3.5 rounded-2xl bg-emerald-50/50 border border-emerald-200">
+          <div className="space-y-0.5">
+            <div className="text-xs font-bold text-stone-800">
+              {isGu ? 'SMS સ્માર્ટ ડિટેક્શન' : 'SMS Smart Detection'}
+            </div>
+            <div className="text-[11px] text-stone-500">
+              {isGu ? 'બેંક SMS માંથી ઓટો ખર્ચ શોધણી' : 'Auto-detect expenses from bank SMS'}
+            </div>
+          </div>
+          {permStatus.sms ? (
+            <span className="px-3 py-1.5 rounded-xl bg-emerald-100 text-emerald-700 text-xs font-semibold flex items-center gap-1">
+              <Check className="w-3.5 h-3.5" /> {isGu ? 'મંજૂર' : 'Granted'}
+            </span>
+          ) : (
+            <button
+              onClick={handleRequestSMS}
+              disabled={permLoading}
+              className="py-2 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold transition shrink-0 cursor-pointer disabled:opacity-50"
+            >
+              {isGu ? 'પરમિશન આપો' : 'Grant'}
+            </button>
+          )}
+        </div>
+
+        {/* Notification Permission */}
+        <div className="flex items-center justify-between p-3.5 rounded-2xl bg-indigo-50/50 border border-indigo-200">
+          <div className="space-y-0.5">
+            <div className="text-xs font-bold text-stone-800">
+              {isGu ? 'નોટિફિકેશન' : 'Notifications'}
+            </div>
+            <div className="text-[11px] text-stone-500">
+              {isGu ? 'દૈનિક રિમાઇન્ડર અને ખર્ચ એલર્ટ' : 'Daily reminders & expense alerts'}
+            </div>
+          </div>
+          {permStatus.notifications ? (
+            <span className="px-3 py-1.5 rounded-xl bg-indigo-100 text-indigo-700 text-xs font-semibold flex items-center gap-1">
+              <Check className="w-3.5 h-3.5" /> {isGu ? 'મંજૂર' : 'Granted'}
+            </span>
+          ) : (
+            <button
+              onClick={handleRequestNotifications}
+              disabled={permLoading}
+              className="py-2 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold transition shrink-0 cursor-pointer disabled:opacity-50"
+            >
+              {isGu ? 'પરમિશન આપો' : 'Grant'}
+            </button>
+          )}
+        </div>
+
+        {/* App Usage Permission */}
+        <div className="flex items-center justify-between p-3.5 rounded-2xl bg-amber-50/50 border border-amber-200">
+          <div className="space-y-0.5">
+            <div className="text-xs font-bold text-stone-800">
+              {isGu ? 'એપ વપરાશ ડેટા' : 'App Usage Data'}
+            </div>
+            <div className="text-[11px] text-stone-500">
+              {isGu ? 'પેમેન્ટ એપ વાપર્યા પછી સ્માર્ટ રિમાઇન્ડર' : 'Smart reminders after using payment apps'}
+            </div>
+          </div>
+          {permStatus.usage ? (
+            <span className="px-3 py-1.5 rounded-xl bg-amber-100 text-amber-700 text-xs font-semibold flex items-center gap-1">
+              <Check className="w-3.5 h-3.5" /> {isGu ? 'મંજૂર' : 'Granted'}
+            </span>
+          ) : (
+            <button
+              onClick={handleOpenUsageSettings}
+              className="py-2 px-4 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold transition shrink-0 cursor-pointer"
+            >
+              {isGu ? 'સેટિંગ્સ ખોલો' : 'Open Settings'}
+            </button>
+          )}
+        </div>
       </div>
 
       {/* 9. Integrated "About" Section */}
@@ -820,7 +916,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
             <h3 className="text-sm font-bold tracking-tight">{t.appName}</h3>
           </div>
           <span className="text-[10px] font-mono font-bold bg-stone-800 text-emerald-400 px-2 py-0.5 rounded-md border border-stone-700">
-            v1.0.0 Stable
+            v1.1.0 Stable
           </span>
         </div>
 

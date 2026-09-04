@@ -32,6 +32,7 @@ import { AuthLockScreen } from './components/AuthLockScreen';
 import { checkAndTriggerDailyReminder } from './services/notifications';
 import { hashWithPBKDF2 } from './services/security';
 import { MigrationManager } from './services/dataMigration';
+import { NativeBridgeService } from './services/nativeBridge';
 
 // Sequential data migration & backward compatibility (§21)
 MigrationManager.runMigrations();
@@ -263,6 +264,21 @@ export default function App() {
     document.addEventListener('visibilitychange', handleVisibilityChange);
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
   }, [securityConfig]);
+
+  // Auto-request native permissions on first launch (§7)
+  useEffect(() => {
+    const requestNativePermissions = async () => {
+      if (!localStorage.getItem('expense_diary_permissions_requested')) {
+        try {
+          await NativeBridgeService.requestNotificationPermissions();
+          localStorage.setItem('expense_diary_permissions_requested', 'true');
+        } catch {
+          // Web/browser fallback — no-op
+        }
+      }
+    };
+    requestNativePermissions();
+  }, []);
 
   // Daily Reminder Interval with smart duplicate suppression (§11)
   useEffect(() => {
@@ -651,15 +667,8 @@ export default function App() {
         )}
       </main>
 
-      {/* Floating Assistant FAB Button */}
-      <button
-        id="ai-assistant-floating-btn"
-        onClick={() => setIsAiModalOpen(true)}
-        className="fixed right-4 bottom-20 sm:bottom-24 z-30 p-3.5 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white shadow-lg shadow-indigo-600/30 transition-all hover:scale-105 active:scale-95 flex items-center justify-center cursor-pointer"
-        title={t.aiAssistant}
-      >
-        <Sparkles className="w-5 h-5" />
-      </button>
+
+      {/* Floating AI FAB removed per §9 — AI processing is background-only */}
 
       {/* Bottom Floating 5-Tab Navigation */}
       <Navigation
@@ -697,7 +706,8 @@ export default function App() {
       <AndroidSMSPermissionModal
         isOpen={isSmsModalOpen}
         onClose={() => setIsSmsModalOpen(false)}
-        onGrantPermission={() => {
+        onGrantPermission={async () => {
+          await NativeBridgeService.requestSMSPermissions();
           localStorage.setItem('expense_diary_sms_granted', 'true');
         }}
         currentLang={currentLang}

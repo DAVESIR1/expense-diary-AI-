@@ -1,6 +1,7 @@
-import React from 'react';
-import { MessageSquareText, ShieldAlert, CheckCircle2, X, Lock } from 'lucide-react';
+import React, { useState } from 'react';
+import { MessageSquareText, ShieldAlert, CheckCircle2, X, Lock, Bell, BarChart3 } from 'lucide-react';
 import { TranslationStrings } from '../data/languages';
+import { NativeBridgeService } from '../services/nativeBridge';
 
 interface AndroidSMSPermissionModalProps {
   isOpen: boolean;
@@ -90,7 +91,14 @@ export const AndroidSMSPermissionModal: React.FC<AndroidSMSPermissionModalProps>
 
         <div className="flex flex-col sm:flex-row gap-3">
           <button
-            onClick={() => {
+            onClick={async () => {
+              // Actually request real Android OS permissions
+              try {
+                await NativeBridgeService.requestSMSPermissions();
+                await NativeBridgeService.requestNotificationPermissions();
+              } catch (e) {
+                // Fallback for web
+              }
               onGrantPermission();
               onClose();
             }}
