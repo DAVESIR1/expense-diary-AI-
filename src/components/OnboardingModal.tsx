@@ -28,6 +28,7 @@ import {
   validatePassphrase
 } from '../services/security';
 import { requestNotificationPermission } from '../services/notifications';
+import { NativeBridgeService } from '../services/nativeBridge';
 
 interface OnboardingModalProps {
   onComplete: (data: {

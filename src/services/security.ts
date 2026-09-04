@@ -125,9 +125,18 @@ export async function verifyPBKDF2(
   return hash.toLowerCase() === expectedHash.toLowerCase();
 }
 
-// Biometrics prompt using WebAuthn or platform authenticator
+import { NativeBridgeService } from './nativeBridge';
+
+// Biometrics prompt using Native Android BiometricPrompt or WebAuthn platform authenticator
 export async function isBiometricsAvailable(): Promise<boolean> {
-  if (window.PublicKeyCredential) {
+  try {
+    const nativeRes = await NativeBridgeService.isBiometricsAvailable();
+    if (nativeRes && nativeRes.available) {
+      return true;
+    }
+  } catch {}
+
+  if (typeof window !== 'undefined' && window.PublicKeyCredential) {
     try {
       return await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable();
     } catch {
@@ -137,24 +146,41 @@ export async function isBiometricsAvailable(): Promise<boolean> {
   return false;
 }
 
-export async function authenticateWithBiometrics(): Promise<boolean> {
-  if (!window.PublicKeyCredential) return false;
+export async function authenticateWithBiometrics(promptTitle?: string, promptSubtitle?: string): Promise<boolean> {
+  // 1. Try Native Android Hardware Biometrics first
   try {
-    const challenge = new Uint8Array(32);
-    crypto.getRandomValues(challenge);
-
-    const credential = await navigator.credentials.get({
-      publicKey: {
-        challenge,
-        timeout: 60000,
-        userVerification: 'required',
-        rpId: window.location.hostname || 'localhost',
-      },
+    const nativeRes = await NativeBridgeService.authenticateBiometrics({
+      title: promptTitle || 'Expense Diary AI',
+      subtitle: promptSubtitle || 'Confirm your fingerprint to unlock',
+      cancelText: 'Cancel',
     });
+    if (nativeRes && nativeRes.success) {
+      return true;
+    }
+    if (nativeRes && nativeRes.error && nativeRes.error.toLowerCase().includes('cancel')) {
+      return false;
+    }
+  } catch {}
 
-    return !!credential;
-  } catch {
-    // If WebAuthn fails or not configured, return false cleanly
-    return false;
+  // 2. Web / Browser fallback with WebAuthn
+  if (typeof window !== 'undefined' && window.PublicKeyCredential && navigator.credentials) {
+    try {
+      const challenge = new Uint8Array(32);
+      crypto.getRandomValues(challenge);
+
+      const credential = await navigator.credentials.get({
+        publicKey: {
+          challenge,
+          timeout: 30000,
+          userVerification: 'preferred',
+          rpId: window.location.hostname || undefined,
+        },
+      });
+
+      return !!credential;
+    } catch {
+      return false;
+    }
   }
+  return false;
 }

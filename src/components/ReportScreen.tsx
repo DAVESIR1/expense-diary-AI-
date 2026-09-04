@@ -333,19 +333,30 @@ export const ReportScreen: React.FC<ReportScreenProps> = ({
     } else if (currentModal === 'pdf') {
       const htmlContent = generateHtmlReport();
       const filename = `Expense_Report_${period}_${dateStr}.html`;
+
+      // 1. Save HTML copy to Downloads folder via Scoped Storage
       try {
-        const res = await NativeBridgeService.saveFileToDownloads(filename, htmlContent, 'text/html');
-        if (res && res.success) {
+        await NativeBridgeService.saveFileToDownloads(filename, htmlContent, 'text/html');
+      } catch {}
+
+      // 2. Trigger native Android Print / "Save as PDF" dialog
+      try {
+        const printed = await NativeBridgeService.printDocument(`Expense_Report_${period}_${dateStr}`);
+        if (printed) {
           showExportNotice(
             isGu
-              ? `PDF/HTML રિપોર્ટ Downloads ફોલ્ડરમાં સેવ થયો: ${filename}`
-              : `Report saved to Downloads folder: ${filename}`
+              ? `PDF પ્રિન્ટ / 'Save as PDF' ડાયલોગ શરૂ થયો.`
+              : `PDF Print / 'Save as PDF' dialog opened.`
           );
+          return;
         }
       } catch {}
+
+      // 3. Web Print fallback
       try {
         window.print();
       } catch {}
+
       showExportNotice(
         isGu
           ? `રિપોર્ટ Downloads ફોલ્ડરમાં સેવ થયો (${filename})`
@@ -374,6 +385,17 @@ export const ReportScreen: React.FC<ReportScreenProps> = ({
       } catch {}
       handleShareReport();
     } else if (currentModal === 'pdf') {
+      const htmlContent = generateHtmlReport();
+      const filename = `Expense_Report_${period}_${dateStr}.html`;
+      try {
+        const shared = await NativeBridgeService.shareFile(
+          filename,
+          htmlContent,
+          'text/html',
+          isGu ? 'નાણાકીય રિપોર્ટ (PDF/HTML)' : 'Financial Report (PDF/HTML)'
+        );
+        if (shared.success) return;
+      } catch {}
       handleShareReport();
     }
   };

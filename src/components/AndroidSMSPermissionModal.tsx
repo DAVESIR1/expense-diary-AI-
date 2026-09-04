@@ -89,27 +89,46 @@ export const AndroidSMSPermissionModal: React.FC<AndroidSMSPermissionModalProps>
           </span>
         </div>
 
-        <div className="flex flex-col sm:flex-row gap-3">
+        <div className="flex flex-col sm:flex-row gap-2.5">
           <button
             onClick={async () => {
               // 1-Tap Unified Native Permission Request
               try {
-                await NativeBridgeService.requestAllNativePermissions();
+                const res = await NativeBridgeService.requestAllNativePermissions();
+                if (res && res.sms) {
+                  onGrantPermission();
+                  onClose();
+                  return;
+                }
+                const detail = await NativeBridgeService.checkSMSPermissionDetailed();
+                if (detail.isRestricted || !detail.granted) {
+                  await NativeBridgeService.openAppSettings();
+                }
               } catch (e) {
                 // Fallback for web
               }
               onGrantPermission();
               onClose();
             }}
-            className="flex-1 py-3 px-5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-sm shadow-sm transition active:scale-98 text-center cursor-pointer"
+            className="flex-1 py-3 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs sm:text-sm shadow-sm transition active:scale-98 text-center cursor-pointer"
           >
             {isGu ? 'હા, SMS પરમિશન આપો' : 'Allow SMS Access'}
           </button>
           <button
-            onClick={onClose}
-            className="py-3 px-5 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-700 font-semibold text-sm transition active:scale-98 text-center cursor-pointer"
+            onClick={async () => {
+              await NativeBridgeService.openAppSettings();
+              onClose();
+            }}
+            className="py-3 px-3.5 rounded-xl border border-stone-300 bg-white hover:bg-stone-50 text-stone-700 font-semibold text-xs sm:text-sm transition active:scale-98 text-center cursor-pointer"
+            title={isGu ? 'ઍપ સેટિંગ્સ ખોલો' : 'Open App Settings'}
           >
-            {isGu ? 'પછી પૂછજો (મેન્યુઅલ રાખીશ)' : 'Maybe Later (Manual Entry)'}
+            {isGu ? 'સેટિંગ્સ' : 'App Settings'}
+          </button>
+          <button
+            onClick={onClose}
+            className="py-3 px-4 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-600 font-semibold text-xs sm:text-sm transition active:scale-98 text-center cursor-pointer"
+          >
+            {isGu ? 'પછી પૂછજો' : 'Maybe Later'}
           </button>
         </div>
       </div>

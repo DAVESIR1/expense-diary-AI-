@@ -24,12 +24,17 @@ interface NativeBridgePluginInterface {
   requestSMSPermissions(): Promise<{ granted: boolean }>;
   requestNotificationPermissions(): Promise<{ granted: boolean }>;
   requestAllNativePermissions(): Promise<{ sms: boolean; notifications: boolean; granted: boolean }>;
+  openAppSettings(): Promise<{ success: boolean }>;
+  checkSMSPermissionDetailed(): Promise<{ granted: boolean; isRestricted: boolean; sdkInt?: number }>;
   openUsageSettings(): Promise<{ success: boolean }>;
   getRecentPaymentAppUsage(): Promise<{ hasPermission: boolean; apps: AppUsageRecord[] }>;
   readRecentBankSMS(): Promise<{ hasPermission: boolean; messages: BankSMSMessage[] }>;
   showNotification(options: { title: string; body: string }): Promise<{ success: boolean }>;
   saveFileToDownloads(options: { fileName: string; mimeType: string; base64Data?: string; textContent?: string }): Promise<{ success: boolean; filePath?: string; fileName?: string }>;
   shareFile(options: { fileName: string; mimeType: string; base64Data?: string; textContent?: string; title?: string }): Promise<{ success: boolean }>;
+  isBiometricsAvailable(): Promise<{ available: boolean; isSecure: boolean }>;
+  authenticateBiometrics(options: { title?: string; subtitle?: string; cancelText?: string }): Promise<{ success: boolean; error?: string }>;
+  printDocument(options: { jobName?: string }): Promise<{ success: boolean; error?: string }>;
 }
 
 // Register native bridge plugin (provided by Android NativeBridgePlugin.java)
@@ -262,6 +267,94 @@ export const NativeBridgeService = {
         }
       }
       return { success: false };
+    }
+  },
+
+  /**
+   * Open Android System "App Details / Permissions" settings page.
+   * Useful on Android 13+ to bypass Restricted Settings.
+   */
+  async openAppSettings(): Promise<boolean> {
+    try {
+      const res = await NativeBridgeImpl.openAppSettings();
+      return !!res.success;
+    } catch {
+      return false;
+    }
+  },
+
+  /**
+   * Detailed check for SMS permissions and Android 13+ restricted settings state.
+   */
+  async checkSMSPermissionDetailed(): Promise<{ granted: boolean; isRestricted: boolean; sdkInt?: number }> {
+    try {
+      return await NativeBridgeImpl.checkSMSPermissionDetailed();
+    } catch {
+      const smsSaved = localStorage.getItem('expense_diary_sms_granted') === 'true';
+      return { granted: smsSaved, isRestricted: false };
+    }
+  },
+
+  /**
+   * Check if native hardware biometrics (Fingerprint / Face Unlock / Screen Lock) are available and enrolled.
+   */
+  async isBiometricsAvailable(): Promise<{ available: boolean; isSecure: boolean }> {
+    try {
+      return await NativeBridgeImpl.isBiometricsAvailable();
+    } catch {
+      // Fallback for Web/PWA using WebAuthn platform authenticator
+      if ('PublicKeyCredential' in window) {
+        try {
+          const available = await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable();
+          return { available, isSecure: available };
+        } catch {
+          return { available: false, isSecure: false };
+        }
+      }
+      return { available: false, isSecure: false };
+    }
+  },
+
+  /**
+   * Trigger native Android BiometricPrompt or fallback for WebAuthn.
+   */
+  async authenticateBiometrics(options?: {
+    title?: string;
+    subtitle?: string;
+    cancelText?: string;
+  }): Promise<{ success: boolean; error?: string }> {
+    try {
+      const res = await NativeBridgeImpl.authenticateBiometrics({
+        title: options?.title || 'Expense Diary AI',
+        subtitle: options?.subtitle || 'Confirm your fingerprint to unlock',
+        cancelText: options?.cancelText || 'Cancel',
+      });
+      return res;
+    } catch (e: any) {
+      return { success: false, error: e?.message || 'Biometrics error' };
+    }
+  },
+
+  /**
+   * Trigger native Android PrintManager to print or "Save as PDF".
+   */
+  async printDocument(jobName?: string): Promise<boolean> {
+    try {
+      const res = await NativeBridgeImpl.printDocument({
+        jobName: jobName || `Expense_Report_${Date.now()}`,
+      });
+      return !!res.success;
+    } catch {
+      // Fallback for web browser: window.print()
+      if (typeof window !== 'undefined' && window.print) {
+        try {
+          window.print();
+          return true;
+        } catch {
+          return false;
+        }
+      }
+      return false;
     }
   },
 };

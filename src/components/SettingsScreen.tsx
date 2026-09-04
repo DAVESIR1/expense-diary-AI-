@@ -104,23 +104,57 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   const [permStatus, setPermStatus] = useState<NativePermissionsStatus>({ sms: false, notifications: false, usage: false });
   const [permLoading, setPermLoading] = useState(false);
 
-  // Check permissions on mount
-  useEffect(() => {
+  // Check and refresh permissions on mount and when app regains focus/visibility
+  const refreshPermissions = () => {
     NativeBridgeService.checkPermissions().then(setPermStatus).catch(() => {});
+  };
+
+  useEffect(() => {
+    refreshPermissions();
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        refreshPermissions();
+      }
+    };
+    window.addEventListener('focus', refreshPermissions);
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => {
+      window.removeEventListener('focus', refreshPermissions);
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
   }, []);
 
   const handleRequestSMS = async () => {
     setPermLoading(true);
     const granted = await NativeBridgeService.requestSMSPermissions();
-    if (granted) setPermStatus(prev => ({ ...prev, sms: true }));
+    if (granted) {
+      setPermStatus(prev => ({ ...prev, sms: true }));
+      showNotice(isGu ? 'SMS પરમિશન મંજૂર થઈ!' : 'SMS permission granted!');
+    } else {
+      const detail = await NativeBridgeService.checkSMSPermissionDetailed();
+      if (!detail.granted) {
+        showNotice(
+          isGu
+            ? 'પરમિશન માટે "સેટિંગ્સ" બટન દબાવો અને SMS સક્ષમ કરો.'
+            : 'To allow access, please tap "Settings" and enable SMS.'
+        );
+      }
+    }
     setPermLoading(false);
   };
 
   const handleRequestNotifications = async () => {
     setPermLoading(true);
     const granted = await NativeBridgeService.requestNotificationPermissions();
-    if (granted) setPermStatus(prev => ({ ...prev, notifications: true }));
+    if (granted) {
+      setPermStatus(prev => ({ ...prev, notifications: true }));
+      showNotice(isGu ? 'નોટિફિકેશન પરમિશન મંજૂર થઈ!' : 'Notification permission granted!');
+    }
     setPermLoading(false);
+  };
+
+  const handleOpenAppSettings = async () => {
+    await NativeBridgeService.openAppSettings();
   };
 
   const handleOpenUsageSettings = async () => {
@@ -815,13 +849,22 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
               <Check className="w-3.5 h-3.5" /> {isGu ? 'મંજૂર' : 'Granted'}
             </span>
           ) : (
-            <button
-              onClick={handleRequestSMS}
-              disabled={permLoading}
-              className="py-2 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold transition shrink-0 cursor-pointer disabled:opacity-50"
-            >
-              {isGu ? 'પરમિશન આપો' : 'Grant'}
-            </button>
+            <div className="flex items-center gap-1.5">
+              <button
+                onClick={handleRequestSMS}
+                disabled={permLoading}
+                className="py-2 px-3.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold transition shrink-0 cursor-pointer disabled:opacity-50 active:scale-95"
+              >
+                {isGu ? 'પરમિશન આપો' : 'Grant'}
+              </button>
+              <button
+                onClick={handleOpenAppSettings}
+                className="py-2 px-2.5 rounded-xl border border-emerald-300 bg-white hover:bg-emerald-50 text-emerald-800 text-xs font-semibold transition shrink-0 cursor-pointer active:scale-95"
+                title={isGu ? 'ઍપ સેટિંગ્સ ખોલો' : 'Open App Settings'}
+              >
+                {isGu ? 'સેટિંગ્સ' : 'Settings'}
+              </button>
+            </div>
           )}
         </div>
 
@@ -840,15 +883,39 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
               <Check className="w-3.5 h-3.5" /> {isGu ? 'મંજૂર' : 'Granted'}
             </span>
           ) : (
-            <button
-              onClick={handleRequestNotifications}
-              disabled={permLoading}
-              className="py-2 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold transition shrink-0 cursor-pointer disabled:opacity-50"
-            >
-              {isGu ? 'પરમિશન આપો' : 'Grant'}
-            </button>
+            <div className="flex items-center gap-1.5">
+              <button
+                onClick={handleRequestNotifications}
+                disabled={permLoading}
+                className="py-2 px-3.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold transition shrink-0 cursor-pointer disabled:opacity-50 active:scale-95"
+              >
+                {isGu ? 'પરમિશન આપો' : 'Grant'}
+              </button>
+              <button
+                onClick={handleOpenAppSettings}
+                className="py-2 px-2.5 rounded-xl border border-indigo-300 bg-white hover:bg-indigo-50 text-indigo-800 text-xs font-semibold transition shrink-0 cursor-pointer active:scale-95"
+                title={isGu ? 'ઍપ સેટિંગ્સ ખોલો' : 'Open App Settings'}
+              >
+                {isGu ? 'સેટિંગ્સ' : 'Settings'}
+              </button>
+            </div>
           )}
         </div>
+
+        {/* Android 13+ / 14+ Restricted Settings Guidance Note */}
+        {(!permStatus.sms || !permStatus.notifications) && (
+          <div className="p-3.5 rounded-2xl bg-stone-50 border border-stone-200 text-[11px] text-stone-600 space-y-1">
+            <div className="font-bold text-stone-800 flex items-center gap-1.5">
+              <Info className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+              <span>{isGu ? 'Android 13+ / 14+ માટે મહત્વપૂર્ણ સૂચના:' : 'Android 13+ / 14+ Note:'}</span>
+            </div>
+            <p className="leading-relaxed text-stone-600">
+              {isGu
+                ? 'જો સીધી પરમિશન ન મળે, તો "સેટિંગ્સ" બટન દબાવો -> Permissions માં જઈને SMS ચાલુ કરો (અથવા ઉપરના 3 ડૉટ્સ પર ટૅપ કરીને "Allow restricted settings" પસંદ કરો).'
+                : 'If blocked by Android, tap "Settings" -> Permissions -> Allow SMS (or tap 3 dots at top-right -> "Allow restricted settings").'}
+            </p>
+          </div>
+        )}
 
         {/* App Usage Permission */}
         <div className="flex items-center justify-between p-3.5 rounded-2xl bg-amber-50/50 border border-amber-200">

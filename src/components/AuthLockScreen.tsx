@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Lock, Fingerprint, KeyRound, AlertCircle, CheckCircle2, ArrowRight } from 'lucide-react';
 import { SecurityConfig } from '../types';
 import { verifyPBKDF2, normalizeWords, authenticateWithBiometrics } from '../services/security';
@@ -32,6 +32,16 @@ export const AuthLockScreen: React.FC<AuthLockScreenProps> = ({
   const [forgotError, setForgotError] = useState<string | null>(null);
 
   const isGu = currentLang === 'gu';
+
+  // Automatically prompt for fingerprint/biometrics on screen mount if enabled
+  useEffect(() => {
+    if (securityConfig.biometricsEnabled) {
+      const timer = setTimeout(() => {
+        handleBiometricClick();
+      }, 350);
+      return () => clearTimeout(timer);
+    }
+  }, []);
 
   const handleKeyClick = (digit: string) => {
     if (pin.length < 4) {
@@ -74,7 +84,11 @@ export const AuthLockScreen: React.FC<AuthLockScreenProps> = ({
 
   const handleBiometricClick = async () => {
     try {
-      const success = await authenticateWithBiometrics();
+      const title = t.appName;
+      const subtitle = isGu
+        ? 'ઍપ અનલૉક કરવા માટે ફિંગરપ્રિન્ટ સ્કેન કરો'
+        : 'Confirm your fingerprint to unlock';
+      const success = await authenticateWithBiometrics(title, subtitle);
       if (success) {
         onUnlock();
         return;
@@ -82,7 +96,7 @@ export const AuthLockScreen: React.FC<AuthLockScreenProps> = ({
     } catch {}
     setErrorMsg(
       isGu
-        ? 'ફિંગરપ્રિન્ટ મેળ ખાતી નથી. ૪-અંકનો પિન દાખલ કરો.'
+        ? 'ફિંગરપ્રિન્ટ ચકાસણી અપૂર્ણ. ૪-અંકનો પિન દાખલ કરો.'
         : 'Fingerprint not recognized. Please enter 4-digit PIN.'
     );
   };

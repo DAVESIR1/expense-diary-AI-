@@ -86,18 +86,28 @@ const nativePluginCode = `package com.expensediary.ai;
 
 import android.Manifest;
 import android.app.AppOpsManager;
+import android.app.KeyguardManager;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.app.usage.UsageStats;
 import android.app.usage.UsageStatsManager;
+import android.content.ContentValues;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.database.Cursor;
+import android.hardware.biometrics.BiometricManager;
+import android.hardware.biometrics.BiometricPrompt;
 import android.net.Uri;
 import android.os.Build;
+import android.os.CancellationSignal;
+import android.os.Environment;
 import android.os.Process;
+import android.print.PrintAttributes;
+import android.print.PrintDocumentAdapter;
+import android.print.PrintManager;
+import android.provider.MediaStore;
 import android.provider.Settings;
 
 import androidx.core.app.NotificationCompat;
@@ -111,6 +121,11 @@ import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
 import com.getcapacitor.annotation.Permission;
 import com.getcapacitor.annotation.PermissionCallback;
+
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.OutputStream;
+import java.nio.charset.StandardCharsets;
 
 @CapacitorPlugin(
     name = "NativeBridge",
@@ -195,6 +210,38 @@ public class NativeBridgePlugin extends Plugin {
         }
         JSObject res = new JSObject();
         res.put("granted", granted);
+        call.resolve(res);
+    }
+
+    @PluginMethod
+    public void openAppSettings(PluginCall call) {
+        try {
+            Intent intent = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
+            Uri uri = Uri.fromParts("package", getContext().getPackageName(), null);
+            intent.setData(uri);
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            getContext().startActivity(intent);
+            JSObject res = new JSObject();
+            res.put("success", true);
+            call.resolve(res);
+        } catch (Exception e) {
+            call.reject("Failed to open app settings: " + e.getMessage());
+        }
+    }
+
+    @PluginMethod
+    public void checkSMSPermissionDetailed(PluginCall call) {
+        Context context = getContext();
+        boolean granted = ContextCompat.checkSelfPermission(context, Manifest.permission.READ_SMS) == PackageManager.PERMISSION_GRANTED;
+        boolean isRestricted = false;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && !granted) {
+            isRestricted = true;
+        }
+
+        JSObject res = new JSObject();
+        res.put("granted", granted);
+        res.put("isRestricted", isRestricted);
+        res.put("sdkInt", Build.VERSION.SDK_INT);
         call.resolve(res);
     }
 
@@ -382,6 +429,126 @@ public class NativeBridgePlugin extends Plugin {
     }
 
     @PluginMethod
+    public void isBiometricsAvailable(PluginCall call) {
+        boolean available = false;
+        boolean isSecure = false;
+        try {
+            KeyguardManager km = (KeyguardManager) getContext().getSystemService(Context.KEYGUARD_SERVICE);
+            if (km != null) {
+                isSecure = km.isDeviceSecure();
+            }
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                BiometricManager bm = (BiometricManager) getContext().getSystemService(Context.BIOMETRIC_SERVICE);
+                if (bm != null) {
+                    int canAuth = bm.canAuthenticate(BiometricManager.Authenticators.BIOMETRIC_STRONG | BiometricManager.Authenticators.BIOMETRIC_WEAK);
+                    available = (canAuth == BiometricManager.BIOMETRIC_SUCCESS);
+                }
+            } else {
+                available = isSecure;
+            }
+        } catch (Exception ignored) {
+            available = isSecure;
+        }
+
+        JSObject res = new JSObject();
+        res.put("available", available || isSecure);
+        res.put("isSecure", isSecure);
+        call.resolve(res);
+    }
+
+    @PluginMethod
+    public void authenticateBiometrics(PluginCall call) {
+        String title = call.getString("title", "Expense Diary");
+        String subtitle = call.getString("subtitle", "Confirm your fingerprint or screen lock to unlock");
+        String cancelText = call.getString("cancelText", "Cancel");
+
+        getActivity().runOnUiThread(() -> {
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                    BiometricPrompt.Builder builder = new BiometricPrompt.Builder(getContext())
+                        .setTitle(title)
+                        .setSubtitle(subtitle)
+                        .setNegativeButton(cancelText, getContext().getMainExecutor(), (dialog, which) -> {
+                            JSObject res = new JSObject();
+                            res.put("success", false);
+                            res.put("error", "Cancelled by user");
+                            call.resolve(res);
+                        });
+
+                    BiometricPrompt prompt = builder.build();
+                    CancellationSignal cancelSignal = new CancellationSignal();
+
+                    prompt.authenticate(cancelSignal, getContext().getMainExecutor(), new BiometricPrompt.AuthenticationCallback() {
+                        @Override
+                        public void onAuthenticationSucceeded(BiometricPrompt.AuthenticationResult result) {
+                            JSObject res = new JSObject();
+                            res.put("success", true);
+                            call.resolve(res);
+                        }
+
+                        @Override
+                        public void onAuthenticationError(int errorCode, CharSequence errString) {
+                            JSObject res = new JSObject();
+                            res.put("success", false);
+                            res.put("error", errString.toString());
+                            call.resolve(res);
+                        }
+
+                        @Override
+                        public void onAuthenticationFailed() {
+                            // Biometric did not match, sensor continues listening
+                        }
+                    });
+                } else {
+                    KeyguardManager km = (KeyguardManager) getContext().getSystemService(Context.KEYGUARD_SERVICE);
+                    if (km != null && km.isDeviceSecure()) {
+                        JSObject res = new JSObject();
+                        res.put("success", true);
+                        call.resolve(res);
+                    } else {
+                        JSObject res = new JSObject();
+                        res.put("success", false);
+                        res.put("error", "Biometrics not available on Android < 9");
+                        call.resolve(res);
+                    }
+                }
+            } catch (Exception e) {
+                call.reject("Biometric authentication failed: " + e.getMessage());
+            }
+        });
+    }
+
+    @PluginMethod
+    public void printDocument(PluginCall call) {
+        String jobName = call.getString("jobName", "Expense_Report_" + System.currentTimeMillis());
+        getActivity().runOnUiThread(() -> {
+            try {
+                PrintManager printManager = (PrintManager) getContext().getSystemService(Context.PRINT_SERVICE);
+                if (printManager != null && getBridge() != null && getBridge().getWebView() != null) {
+                    PrintDocumentAdapter printAdapter;
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                        printAdapter = getBridge().getWebView().createPrintDocumentAdapter(jobName);
+                    } else {
+                        printAdapter = getBridge().getWebView().createPrintDocumentAdapter();
+                    }
+                    printManager.print(jobName, printAdapter, new PrintAttributes.Builder().build());
+                    JSObject res = new JSObject();
+                    res.put("success", true);
+                    call.resolve(res);
+                } else {
+                    JSObject res = new JSObject();
+                    res.put("success", false);
+                    res.put("error", "PrintManager not available");
+                    call.resolve(res);
+                }
+            } catch (Exception e) {
+                call.reject("Print failed: " + e.getMessage());
+            }
+        });
+    }
+
+    @PluginMethod
     public void saveFileToDownloads(PluginCall call) {
         String fileName = call.getString("fileName", "expense_report.csv");
         String mimeType = call.getString("mimeType", "text/csv");
@@ -393,29 +560,55 @@ public class NativeBridgePlugin extends Plugin {
             if (base64Data != null && !base64Data.isEmpty()) {
                 data = android.util.Base64.decode(base64Data, android.util.Base64.DEFAULT);
             } else {
-                data = textContent.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+                data = textContent.getBytes(StandardCharsets.UTF_8);
             }
 
-            java.io.File downloadDir = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS);
-            if (!downloadDir.exists()) {
-                downloadDir.mkdirs();
-            }
-            java.io.File outFile = new java.io.File(downloadDir, fileName);
-            java.io.FileOutputStream fos = new java.io.FileOutputStream(outFile);
-            fos.write(data);
-            fos.flush();
-            fos.close();
+            String savedPath = null;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                try {
+                    ContentValues values = new ContentValues();
+                    values.put(MediaStore.MediaColumns.DISPLAY_NAME, fileName);
+                    values.put(MediaStore.MediaColumns.MIME_TYPE, mimeType);
+                    values.put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS);
 
-            android.media.MediaScannerConnection.scanFile(
-                getContext(),
-                new String[]{outFile.getAbsolutePath()},
-                new String[]{mimeType},
-                null
-            );
+                    Uri uri = getContext().getContentResolver().insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values);
+                    if (uri != null) {
+                        OutputStream os = getContext().getContentResolver().openOutputStream(uri);
+                        if (os != null) {
+                            os.write(data);
+                            os.flush();
+                            os.close();
+                        }
+                        savedPath = uri.toString();
+                    }
+                } catch (Exception me) {
+                    // Fallback to direct file below if MediaStore fails
+                }
+            }
+
+            if (savedPath == null) {
+                File downloadDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS);
+                if (!downloadDir.exists()) {
+                    downloadDir.mkdirs();
+                }
+                File outFile = new File(downloadDir, fileName);
+                FileOutputStream fos = new FileOutputStream(outFile);
+                fos.write(data);
+                fos.flush();
+                fos.close();
+                savedPath = outFile.getAbsolutePath();
+
+                android.media.MediaScannerConnection.scanFile(
+                    getContext(),
+                    new String[]{outFile.getAbsolutePath()},
+                    new String[]{mimeType},
+                    null
+                );
+            }
 
             JSObject res = new JSObject();
             res.put("success", true);
-            res.put("filePath", outFile.getAbsolutePath());
+            res.put("filePath", savedPath);
             res.put("fileName", fileName);
             call.resolve(res);
         } catch (Exception e) {
@@ -436,15 +629,15 @@ public class NativeBridgePlugin extends Plugin {
             if (base64Data != null && !base64Data.isEmpty()) {
                 data = android.util.Base64.decode(base64Data, android.util.Base64.DEFAULT);
             } else {
-                data = textContent.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+                data = textContent.getBytes(StandardCharsets.UTF_8);
             }
 
-            java.io.File cacheDir = new java.io.File(getContext().getCacheDir(), "shared_files");
+            File cacheDir = new File(getContext().getCacheDir(), "shared_files");
             if (!cacheDir.exists()) {
                 cacheDir.mkdirs();
             }
-            java.io.File sharedFile = new java.io.File(cacheDir, fileName);
-            java.io.FileOutputStream fos = new java.io.FileOutputStream(sharedFile);
+            File sharedFile = new File(cacheDir, fileName);
+            FileOutputStream fos = new FileOutputStream(sharedFile);
             fos.write(data);
             fos.flush();
             fos.close();
@@ -506,7 +699,6 @@ public class NativeBridgePlugin extends Plugin {
         boolean hasAction = lower.contains("debited") || lower.contains("credited") || lower.contains("spent") || lower.contains("sent") || lower.contains("received") || lower.contains("paid") || lower.contains("transferred");
         return hasAmount && hasAction;
     }
-}
 `;
 
 safeWrite(path.join(javaSrcDir, 'NativeBridgePlugin.java'), nativePluginCode);
@@ -571,10 +763,11 @@ if (fs.existsSync(manifestPath)) {
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.USE_BIOMETRIC" />
+    <uses-permission android:name="android.permission.USE_FINGERPRINT" />
     <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS" tools:ignore="ProtectedPermissions" />
 `;
     // Clean old permissions if needed
-    m = m.replace(/<uses-permission\s+android:name="android\.permission\.(RECEIVE_SMS|READ_SMS|POST_NOTIFICATIONS|VIBRATE|WAKE_LOCK|USE_BIOMETRIC|PACKAGE_USAGE_STATS)"[^>]*\/>/g, '');
+    m = m.replace(/<uses-permission\s+android:name="android\.permission\.(RECEIVE_SMS|READ_SMS|POST_NOTIFICATIONS|VIBRATE|WAKE_LOCK|USE_BIOMETRIC|USE_FINGERPRINT|PACKAGE_USAGE_STATS)"[^>]*\/>/g, '');
     m = m.replace('<application', permissions.trim() + '\n    <application');
 
     // Add FileProvider to application if not present
