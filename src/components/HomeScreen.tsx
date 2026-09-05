@@ -23,7 +23,9 @@ import {
   Receipt,
   ArrowLeftRight,
   Banknote,
-  Sparkles
+  Sparkles,
+  Mail,
+  MessageSquare
 } from 'lucide-react';
 import { Transaction, TransactionType, PendingAIMessage, Category, UserProfile } from '../types';
 import { TranslationStrings } from '../data/languages';
@@ -42,6 +44,7 @@ interface HomeScreenProps {
   currentLang?: string;
   profile?: UserProfile;
   onTriggerScan?: () => Promise<number>;
+  onOpenEmailSync?: () => void;
 }
 
 export const HomeScreen: React.FC<HomeScreenProps> = ({
@@ -58,6 +61,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
   profile,
   onTriggerScan,
   onEditTransaction,
+  onOpenEmailSync,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedFilterType, setSelectedFilterType] = useState<'all' | 'income' | 'expense'>('all');
@@ -169,6 +173,42 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
     .reduce((sum, item) => sum + item.amount, 0);
 
   const netBalance = totalIncome - totalExpense;
+
+  // Domain-specific breakdowns for dedicated category views
+  const totalNps = categoryPeriodTransactions
+    .filter((tx) => {
+      const s = `${tx.title} ${tx.category} ${tx.notes || ''} ${tx.evidence || ''}`.toLowerCase();
+      return s.includes('nps') || s.includes('pran') || s.includes('protean') || s.includes('cra-nsdl');
+    })
+    .reduce((sum, item) => sum + item.amount, 0);
+
+  const totalSip = categoryPeriodTransactions
+    .filter((tx) => {
+      const s = `${tx.title} ${tx.category} ${tx.notes || ''} ${tx.evidence || ''}`.toLowerCase();
+      return (s.includes('sip') || s.includes('mutual') || s.includes('zerodha') || s.includes('groww')) && !s.includes('nps');
+    })
+    .reduce((sum, item) => sum + item.amount, 0);
+
+  const emailInvCount = categoryPeriodTransactions.filter(
+    (tx) => tx.source === 'email' || tx.id.startsWith('email-') || (tx.evidenceSender && tx.evidenceSender.includes('@'))
+  ).length;
+  const smsInvCount = categoryPeriodTransactions.length - emailInvCount;
+
+  const totalShoppingSpend = categoryPeriodTransactions
+    .filter((tx) => tx.type === 'expense' && matchesCategoryFilter(tx, 'shopping'))
+    .reduce((sum, item) => sum + item.amount, 0);
+
+  const totalBillsSpend = categoryPeriodTransactions
+    .filter((tx) => tx.type === 'expense' && matchesCategoryFilter(tx, 'bills'))
+    .reduce((sum, item) => sum + item.amount, 0);
+
+  const totalTransfersOut = categoryPeriodTransactions
+    .filter((tx) => tx.type === 'expense' && matchesCategoryFilter(tx, 'transfer'))
+    .reduce((sum, item) => sum + item.amount, 0);
+
+  const totalTransfersIn = categoryPeriodTransactions
+    .filter((tx) => tx.type === 'income' && matchesCategoryFilter(tx, 'transfer'))
+    .reduce((sum, item) => sum + item.amount, 0);
 
   // Filter transactions for list (combines period + search + income/expense filter + category tabs)
   const filteredTransactions = categoryPeriodTransactions.filter((item) => {
@@ -624,100 +664,272 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
       </div>
 
 
-      {/* TOP CARDS: Minimal Income & Expense with Inline Quick Add Buttons */}
-      <section id="income-expense-cards-grid" className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">
-        {/* Income Card (Soft Green) */}
-        <div
-          id="home-income-card"
-          className="bg-[#EBFBEE] rounded-3xl p-6 sm:p-7 border border-[#D1F7D9] flex flex-col justify-between min-h-[160px] shadow-xs hover:shadow-sm transition-all"
-        >
-          <div className="flex items-start justify-between">
-            <div>
-              <p className="text-[#2D6A4F] text-sm sm:text-base font-bold tracking-tight mb-1 flex items-center gap-1.5">
-                <span>{t.income}</span>
-                {categoryFilter !== 'all' && (
-                  <span className="text-[10px] bg-[#D1F7D9] text-[#1B4332] px-2 py-0.5 rounded-full font-bold">
-                    {categoryFilter === 'investment' ? (isGu ? 'રોકાણ' : 'Investment') :
-                     categoryFilter === 'shopping' ? (isGu ? 'શોપિંગ' : 'Shopping') :
-                     categoryFilter === 'bills' ? (isGu ? 'બિલ' : 'Bills') :
-                     categoryFilter === 'transfer' ? (isGu ? 'ટ્રાન્સફર' : 'Transfer') :
-                     categoryFilter === 'offline' ? (isGu ? 'રોકડ' : 'Cash') : categoryFilter}
-                  </span>
-                )}
-              </p>
-              <h1
-                id="home-total-income-value"
-                className="text-4xl sm:text-5xl font-bold text-[#1B4332] tracking-tight font-mono"
-              >
-                {currency}{totalIncome.toLocaleString()}
+      {/* CATEGORY-DEDICATED HERO CARDS OR STANDARD DUAL CARDS */}
+      {categoryFilter === 'investment' ? (
+        /* DEDICATED INVESTMENT & NPS SINGLE CONTRIBUTION CARD */
+        <section id="home-investment-dedicated-card" className="bg-gradient-to-br from-indigo-950 via-indigo-900 to-purple-950 rounded-3xl p-6 sm:p-7 border border-indigo-700/60 text-white shadow-lg space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <span className="p-1.5 rounded-xl bg-indigo-500/30 text-indigo-300 border border-indigo-400/20">
+                  <PiggyBank className="w-5 h-5 stroke-[2.5]" />
+                </span>
+                <span className="text-xs font-bold uppercase tracking-wider text-indigo-200">
+                  {isGu ? 'કુલ રોકાણ અને NPS યોગદાન કાર્ડ' : 'Total Investment & NPS Contribution'}
+                </span>
+              </div>
+              <h1 id="home-investment-total-val" className="text-4xl sm:text-5xl font-extrabold font-mono tracking-tight text-white">
+                {currency}{totalInvestment.toLocaleString()}
               </h1>
+              <p className="text-xs text-indigo-200/90 font-medium">
+                {isGu
+                  ? `${categoryPeriodTransactions.length} કુલ યોગદાન (SMS અને ઈમેલ બંનેમાંથી પ્રમાણિત)`
+                  : `${categoryPeriodTransactions.length} Verified Contributions from SMS & Email`}
+              </p>
             </div>
-            {/* Inline Quick Add Button */}
-            <button
-              id="home-inline-add-income-btn"
-              onClick={() => onOpenAddModal('income')}
-              className="px-3 py-1.5 rounded-xl bg-[#2D6A4F] text-white text-xs font-bold shadow-xs hover:bg-[#1B4332] transition flex items-center gap-1 cursor-pointer active:scale-95"
-              title={t.addIncome}
-            >
-              <Plus className="w-4 h-4 stroke-[2.5]" />
-              <span>{isGu ? 'આવક ઉમેરો' : 'Add'}</span>
-            </button>
-          </div>
-          
-          <div className="flex items-center gap-2 text-[#40916C] text-xs font-semibold mt-3">
-            <ArrowDownLeft className="w-4 h-4 stroke-[2.5]" />
-            <span>
-              {categoryPeriodTransactions.filter((x) => x.type === 'income').length} {t.income}
-            </span>
-          </div>
-        </div>
 
-        {/* Expense Card (Soft Red) */}
-        <div
-          id="home-expense-card"
-          className="bg-[#FFF0F0] rounded-3xl p-6 sm:p-7 border border-[#FEE2E2] flex flex-col justify-between min-h-[160px] shadow-xs hover:shadow-sm transition-all"
-        >
+            {/* Quick Action Buttons */}
+            <div className="flex items-center gap-2 self-start">
+              <button
+                type="button"
+                onClick={() => onOpenAddModal('expense')}
+                className="px-3.5 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-bold shadow-xs transition flex items-center gap-1.5 cursor-pointer active:scale-95"
+              >
+                <Plus className="w-4 h-4 stroke-[2.5]" />
+                <span>{isGu ? 'નવું રોકાણ ઉમેરો' : 'Add Investment'}</span>
+              </button>
+
+              {onOpenEmailSync && (
+                <button
+                  type="button"
+                  onClick={onOpenEmailSync}
+                  className="px-3.5 py-2 rounded-xl bg-indigo-600/80 hover:bg-indigo-600 text-white text-xs font-bold border border-indigo-400/30 transition flex items-center gap-1.5 cursor-pointer active:scale-95"
+                  title={isGu ? 'Gmail / .eml માંથી NPS યોગદાન સ્કેન કરો' : 'Scan NPS contributions from Email'}
+                >
+                  <Mail className="w-4 h-4" />
+                  <span>{isGu ? 'ઈમેલ સિંક' : 'Email Sync'}</span>
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Breakdown Stats Grid */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 pt-3 border-t border-indigo-800/60">
+            <div className="bg-white/10 rounded-2xl p-3 backdrop-blur-xs">
+              <span className="text-[10px] text-indigo-300 font-bold uppercase block tracking-wider">
+                NPS (CRA-NSDL / PRAN)
+              </span>
+              <span className="text-base sm:text-lg font-bold font-mono text-emerald-300">
+                {currency}{totalNps.toLocaleString()}
+              </span>
+            </div>
+
+            <div className="bg-white/10 rounded-2xl p-3 backdrop-blur-xs">
+              <span className="text-[10px] text-indigo-300 font-bold uppercase block tracking-wider">
+                {isGu ? 'મ્યુચ્યુઅલ ફંડ / SIP' : 'Mutual Funds / SIP'}
+              </span>
+              <span className="text-base sm:text-lg font-bold font-mono text-purple-200">
+                {currency}{totalSip.toLocaleString()}
+              </span>
+            </div>
+
+            <div className="bg-white/10 rounded-2xl p-3 backdrop-blur-xs">
+              <span className="text-[10px] text-indigo-300 font-bold uppercase block tracking-wider">
+                {isGu ? 'SMS સ્ત્રોત' : 'SMS Records'}
+              </span>
+              <span className="text-base sm:text-lg font-bold font-mono text-sky-200 flex items-center gap-1">
+                <MessageSquare className="w-3.5 h-3.5" />
+                <span>{smsInvCount} {isGu ? 'નોંધ' : 'txns'}</span>
+              </span>
+            </div>
+
+            <div className="bg-white/10 rounded-2xl p-3 backdrop-blur-xs">
+              <span className="text-[10px] text-indigo-300 font-bold uppercase block tracking-wider">
+                {isGu ? 'ઈમેલ સ્ત્રોત' : 'Email Records'}
+              </span>
+              <span className="text-base sm:text-lg font-bold font-mono text-amber-300 flex items-center gap-1">
+                <Mail className="w-3.5 h-3.5" />
+                <span>{emailInvCount} {isGu ? 'નોંધ' : 'txns'}</span>
+              </span>
+            </div>
+          </div>
+        </section>
+      ) : categoryFilter === 'shopping' ? (
+        /* DEDICATED SHOPPING HERO CARD */
+        <section id="home-shopping-dedicated-card" className="bg-gradient-to-br from-blue-950 via-blue-900 to-indigo-950 rounded-3xl p-6 sm:p-7 border border-blue-800 text-white shadow-lg space-y-4">
           <div className="flex items-start justify-between">
             <div>
-              <p className="text-[#C53030] text-sm sm:text-base font-bold tracking-tight mb-1 flex items-center gap-1.5">
-                <span>{t.expense}</span>
-                {categoryFilter !== 'all' && (
-                  <span className="text-[10px] bg-[#FEE2E2] text-[#742A2A] px-2 py-0.5 rounded-full font-bold">
-                    {categoryFilter === 'investment' ? (isGu ? 'રોકાણ' : 'Investment') :
-                     categoryFilter === 'shopping' ? (isGu ? 'શોપિંગ' : 'Shopping') :
-                     categoryFilter === 'bills' ? (isGu ? 'બિલ' : 'Bills') :
-                     categoryFilter === 'transfer' ? (isGu ? 'ટ્રાન્સફર' : 'Transfer') :
-                     categoryFilter === 'offline' ? (isGu ? 'રોકડ' : 'Cash') : categoryFilter}
-                  </span>
-                )}
-              </p>
-              <h1
-                id="home-total-expense-value"
-                className="text-4xl sm:text-5xl font-bold text-[#742A2A] tracking-tight font-mono"
-              >
-                {currency}{totalExpense.toLocaleString()}
+              <div className="flex items-center gap-2 mb-1">
+                <span className="p-1.5 rounded-xl bg-blue-500/30 text-blue-300">
+                  <ShoppingBag className="w-5 h-5 stroke-[2.5]" />
+                </span>
+                <span className="text-xs font-bold uppercase tracking-wider text-blue-200">
+                  {isGu ? 'કુલ શોપિંગ ખર્ચ' : 'Total Shopping Outflow'}
+                </span>
+              </div>
+              <h1 className="text-4xl sm:text-5xl font-extrabold font-mono tracking-tight text-white">
+                {currency}{totalShoppingSpend.toLocaleString()}
               </h1>
+              <p className="text-xs text-blue-200/90 font-medium mt-1">
+                {categoryPeriodTransactions.length} {isGu ? 'શોપિંગ વ્યવહારો (Amazon, Flipkart, Blinkit વગેરે)' : 'Shopping purchases'}
+              </p>
             </div>
-            {/* Inline Quick Add Button */}
             <button
-              id="home-inline-add-expense-btn"
+              type="button"
               onClick={() => onOpenAddModal('expense')}
-              className="px-3 py-1.5 rounded-xl bg-[#C53030] text-white text-xs font-bold shadow-xs hover:bg-[#742A2A] transition flex items-center gap-1 cursor-pointer active:scale-95"
-              title={t.addExpense}
+              className="px-3.5 py-2 rounded-xl bg-blue-500 hover:bg-blue-600 text-white text-xs font-bold shadow-xs transition flex items-center gap-1.5 cursor-pointer active:scale-95"
             >
               <Plus className="w-4 h-4 stroke-[2.5]" />
-              <span>{isGu ? 'ખર્ચ ઉમેરો' : 'Add'}</span>
+              <span>{isGu ? 'ખર્ચ ઉમેરો' : 'Add Expense'}</span>
             </button>
           </div>
-
-          <div className="flex items-center gap-2 text-[#C53030] text-xs font-semibold mt-3">
-            <ArrowUpRight className="w-4 h-4 stroke-[2.5]" />
-            <span>
-              {categoryPeriodTransactions.filter((x) => x.type === 'expense').length} {t.expense}
-            </span>
+        </section>
+      ) : categoryFilter === 'bills' ? (
+        /* DEDICATED BILLS & UTILITIES HERO CARD */
+        <section id="home-bills-dedicated-card" className="bg-gradient-to-br from-amber-950 via-amber-900 to-orange-950 rounded-3xl p-6 sm:p-7 border border-amber-800 text-white shadow-lg space-y-4">
+          <div className="flex items-start justify-between">
+            <div>
+              <div className="flex items-center gap-2 mb-1">
+                <span className="p-1.5 rounded-xl bg-amber-500/30 text-amber-300">
+                  <Receipt className="w-5 h-5 stroke-[2.5]" />
+                </span>
+                <span className="text-xs font-bold uppercase tracking-wider text-amber-200">
+                  {isGu ? 'કુલ બિલ અને યુટિલિટી ચુકવણી' : 'Total Bills & Utilities Outflow'}
+                </span>
+              </div>
+              <h1 className="text-4xl sm:text-5xl font-extrabold font-mono tracking-tight text-white">
+                {currency}{totalBillsSpend.toLocaleString()}
+              </h1>
+              <p className="text-xs text-amber-200/90 font-medium mt-1">
+                {categoryPeriodTransactions.length} {isGu ? 'બિલ વ્યવહારો (લાઈટ બિલ, ગેસ, મોબાઈલ રિચાર્જ)' : 'Utility and recharge payments'}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => onOpenAddModal('expense')}
+              className="px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold shadow-xs transition flex items-center gap-1.5 cursor-pointer active:scale-95"
+            >
+              <Plus className="w-4 h-4 stroke-[2.5]" />
+              <span>{isGu ? 'બિલ ઉમેરો' : 'Add Bill'}</span>
+            </button>
           </div>
-        </div>
-      </section>
+        </section>
+      ) : categoryFilter === 'transfer' ? (
+        /* DEDICATED UPI TRANSFERS CARD */
+        <section id="home-transfer-dedicated-card" className="bg-gradient-to-br from-teal-950 via-teal-900 to-emerald-950 rounded-3xl p-6 sm:p-7 border border-teal-800 text-white shadow-lg space-y-4">
+          <div className="flex items-start justify-between">
+            <div>
+              <div className="flex items-center gap-2 mb-1">
+                <span className="p-1.5 rounded-xl bg-teal-500/30 text-teal-300">
+                  <ArrowLeftRight className="w-5 h-5 stroke-[2.5]" />
+                </span>
+                <span className="text-xs font-bold uppercase tracking-wider text-teal-200">
+                  {isGu ? 'કુલ UPI ટ્રાન્સફર વ્યવહારો' : 'UPI Transfers Overview'}
+                </span>
+              </div>
+              <h1 className="text-4xl sm:text-5xl font-extrabold font-mono tracking-tight text-white">
+                {currency}{totalTransfersOut.toLocaleString()}
+              </h1>
+              <p className="text-xs text-teal-200/90 font-medium mt-1">
+                {isGu ? `આવક ટ્રાન્સફર: ${currency}${totalTransfersIn.toLocaleString()} | જાવક: ${currency}${totalTransfersOut.toLocaleString()}` : `Incoming: ${currency}${totalTransfersIn.toLocaleString()} | Outgoing: ${currency}${totalTransfersOut.toLocaleString()}`}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => onOpenAddModal('expense')}
+              className="px-3.5 py-2 rounded-xl bg-teal-500 hover:bg-teal-600 text-white text-xs font-bold shadow-xs transition flex items-center gap-1.5 cursor-pointer active:scale-95"
+            >
+              <Plus className="w-4 h-4 stroke-[2.5]" />
+              <span>{isGu ? 'ટ્રાન્સફર ઉમેરો' : 'Add Transfer'}</span>
+            </button>
+          </div>
+        </section>
+      ) : (
+        /* STANDARD DUAL INCOME & EXPENSE CARDS FOR 'ALL' OR 'OFFLINE' */
+        <section id="income-expense-cards-grid" className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">
+          {/* Income Card (Soft Green) */}
+          <div
+            id="home-income-card"
+            className="bg-[#EBFBEE] rounded-3xl p-6 sm:p-7 border border-[#D1F7D9] flex flex-col justify-between min-h-[160px] shadow-xs hover:shadow-sm transition-all"
+          >
+            <div className="flex items-start justify-between">
+              <div>
+                <p className="text-[#2D6A4F] text-sm sm:text-base font-bold tracking-tight mb-1 flex items-center gap-1.5">
+                  <span>{t.income}</span>
+                  {categoryFilter !== 'all' && (
+                    <span className="text-[10px] bg-[#D1F7D9] text-[#1B4332] px-2 py-0.5 rounded-full font-bold">
+                      {categoryFilter === 'offline' ? (isGu ? 'રોકડ' : 'Cash') : categoryFilter}
+                    </span>
+                  )}
+                </p>
+                <h1
+                  id="home-total-income-value"
+                  className="text-4xl sm:text-5xl font-bold text-[#1B4332] tracking-tight font-mono"
+                >
+                  {currency}{totalIncome.toLocaleString()}
+                </h1>
+              </div>
+              <button
+                id="home-inline-add-income-btn"
+                onClick={() => onOpenAddModal('income')}
+                className="px-3 py-1.5 rounded-xl bg-[#2D6A4F] text-white text-xs font-bold shadow-xs hover:bg-[#1B4332] transition flex items-center gap-1 cursor-pointer active:scale-95"
+                title={t.addIncome}
+              >
+                <Plus className="w-4 h-4 stroke-[2.5]" />
+                <span>{isGu ? 'આવક ઉમેરો' : 'Add'}</span>
+              </button>
+            </div>
+            
+            <div className="flex items-center gap-2 text-[#40916C] text-xs font-semibold mt-3">
+              <ArrowDownLeft className="w-4 h-4 stroke-[2.5]" />
+              <span>
+                {categoryPeriodTransactions.filter((x) => x.type === 'income').length} {t.income}
+              </span>
+            </div>
+          </div>
+
+          {/* Expense Card (Soft Red) */}
+          <div
+            id="home-expense-card"
+            className="bg-[#FFF0F0] rounded-3xl p-6 sm:p-7 border border-[#FEE2E2] flex flex-col justify-between min-h-[160px] shadow-xs hover:shadow-sm transition-all"
+          >
+            <div className="flex items-start justify-between">
+              <div>
+                <p className="text-[#C53030] text-sm sm:text-base font-bold tracking-tight mb-1 flex items-center gap-1.5">
+                  <span>{t.expense}</span>
+                  {categoryFilter !== 'all' && (
+                    <span className="text-[10px] bg-[#FEE2E2] text-[#742A2A] px-2 py-0.5 rounded-full font-bold">
+                      {categoryFilter === 'offline' ? (isGu ? 'રોકડ' : 'Cash') : categoryFilter}
+                    </span>
+                  )}
+                </p>
+                <h1
+                  id="home-total-expense-value"
+                  className="text-4xl sm:text-5xl font-bold text-[#742A2A] tracking-tight font-mono"
+                >
+                  {currency}{totalExpense.toLocaleString()}
+                </h1>
+              </div>
+              <button
+                id="home-inline-add-expense-btn"
+                onClick={() => onOpenAddModal('expense')}
+                className="px-3 py-1.5 rounded-xl bg-[#C53030] text-white text-xs font-bold shadow-xs hover:bg-[#742A2A] transition flex items-center gap-1 cursor-pointer active:scale-95"
+                title={t.addExpense}
+              >
+                <Plus className="w-4 h-4 stroke-[2.5]" />
+                <span>{isGu ? 'ખર્ચ ઉમેરો' : 'Add'}</span>
+              </button>
+            </div>
+
+            <div className="flex items-center gap-2 text-[#C53030] text-xs font-semibold mt-3">
+              <ArrowUpRight className="w-4 h-4 stroke-[2.5]" />
+              <span>
+                {categoryPeriodTransactions.filter((x) => x.type === 'expense').length} {t.expense}
+              </span>
+            </div>
+          </div>
+        </section>
+      )}
 
       {/* Net Balance & Monthly Budget Utilization Card */}
       <div className="space-y-2">
@@ -873,18 +1085,36 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                         <h4 className="text-xs sm:text-sm font-bold text-stone-800 truncate">
                           {item.title}
                         </h4>
-                        {item.isAiGenerated && (
-                          <span className="text-[9px] font-bold bg-indigo-50 text-indigo-700 px-1.5 py-0.5 rounded uppercase">
-                            AI
+                        {/* Source Tag: Email or SMS or Proof */}
+                        {item.source === 'email' || item.id.startsWith('email-') || (item.evidenceSender && item.evidenceSender.includes('@')) ? (
+                          <span
+                            className="inline-flex items-center gap-1 text-[10px] font-bold bg-amber-50 text-amber-900 border border-amber-200 px-1.5 py-0.5 rounded"
+                            title={isGu ? 'ઈમેલ દ્વારા પ્રમાણિત વ્યવહાર' : 'Verified via Financial Email'}
+                          >
+                            <Mail className="w-3 h-3 text-amber-600" />
+                            <span>{item.evidenceSender || 'Email'}</span>
                           </span>
-                        )}
-                        {(item.evidence || item.evidenceImage || item.referenceNumber) && (
+                        ) : (item.evidenceSender || item.evidenceSource === 'sms' || item.evidence) ? (
+                          <span
+                            className="inline-flex items-center gap-1 text-[10px] font-bold bg-blue-50 text-blue-900 border border-blue-200 px-1.5 py-0.5 rounded"
+                            title={isGu ? 'SMS દ્વારા પ્રમાણિત વ્યવહાર' : 'Verified via Bank SMS'}
+                          >
+                            <MessageSquare className="w-3 h-3 text-blue-600" />
+                            <span>{item.evidenceSender || 'SMS'}</span>
+                          </span>
+                        ) : (item.evidenceImage || item.referenceNumber) ? (
                           <span
                             className="inline-flex items-center gap-1 text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 px-1.5 py-0.5 rounded"
                             title={isGu ? 'પુરાવો / રસીદ ઉપલબ્ધ છે' : 'Proof / Evidence Available'}
                           >
                             <ShieldCheck className="w-3 h-3 text-emerald-600" />
                             <span>{item.evidenceImage ? (isGu ? 'રસીદ' : 'Receipt') : (isGu ? 'પુરાવો' : 'Proof')}</span>
+                          </span>
+                        ) : null}
+
+                        {item.referenceNumber && (
+                          <span className="text-[10px] font-mono font-medium bg-stone-100 text-stone-600 px-1.5 py-0.5 rounded hidden sm:inline-block">
+                            #{item.referenceNumber}
                           </span>
                         )}
                       </div>
@@ -894,6 +1124,12 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                         <span>•</span>
                         <span>{item.date}</span>
                         {item.time && <span>{item.time}</span>}
+                        {item.accountInfo && (
+                          <>
+                            <span>•</span>
+                            <span className="text-indigo-700 font-semibold">{item.accountInfo}</span>
+                          </>
+                        )}
                         {item.paymentMode && (
                           <>
                             <span>•</span>
@@ -1057,44 +1293,68 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
               </div>
             )}
 
-            {/* Banking / SMS Evidence Section */}
-            {(selectedTxForDetail.evidence || selectedTxForDetail.evidenceSender || selectedTxForDetail.referenceNumber) && (
-              <div className="p-3.5 bg-emerald-50/70 border border-emerald-200 rounded-2xl space-y-2">
-                <div className="flex items-center gap-1.5 text-emerald-900 font-bold text-xs">
-                  <ShieldCheck className="w-4 h-4 text-emerald-600" />
-                  <span>{isGu ? 'ઓરિજિનલ બેંકિંગ પુરાવો (Banking Proof / SMS)' : 'Verified Banking Evidence'}</span>
+            {/* Banking / SMS / Email Evidence Section */}
+            {(selectedTxForDetail.evidence || selectedTxForDetail.evidenceSender || selectedTxForDetail.referenceNumber) && (() => {
+              const isEmailSource = selectedTxForDetail.source === 'email' || selectedTxForDetail.id.startsWith('email-') || (selectedTxForDetail.evidenceSender && selectedTxForDetail.evidenceSender.includes('@'));
+              return (
+                <div className={`p-3.5 rounded-2xl space-y-2 border ${
+                  isEmailSource ? 'bg-amber-50/80 border-amber-200' : 'bg-emerald-50/70 border-emerald-200'
+                }`}>
+                  <div className={`flex items-center gap-1.5 font-bold text-xs ${
+                    isEmailSource ? 'text-amber-900' : 'text-emerald-900'
+                  }`}>
+                    {isEmailSource ? <Mail className="w-4 h-4 text-amber-600" /> : <ShieldCheck className="w-4 h-4 text-emerald-600" />}
+                    <span>
+                      {isEmailSource 
+                        ? (isGu ? 'ઓરિજિનલ ઈમેલ પુરાવો (Verified Email / CRA-NSDL)' : 'Verified Email Evidence (CRA-NSDL / Bank)')
+                        : (isGu ? 'ઓરિજિનલ બેંકિંગ પુરાવો (Banking Proof / SMS)' : 'Verified Banking Evidence')}
+                    </span>
+                  </div>
+
+                  {selectedTxForDetail.evidenceSender && (
+                    <div className={`text-xs flex items-center gap-1.5 ${isEmailSource ? 'text-amber-900' : 'text-emerald-900'}`}>
+                      <span className="font-semibold">{isGu ? (isEmailSource ? 'મોકલનાર ઈમેલ:' : 'મોકલનાર બેંક:') : 'Sender:'}</span>
+                      <span className={`bg-white px-2 py-0.5 rounded-lg border font-mono font-bold text-[11px] ${
+                        isEmailSource ? 'border-amber-200 text-amber-900' : 'border-emerald-200 text-emerald-900'
+                      }`}>
+                        {selectedTxForDetail.evidenceSender}
+                      </span>
+                    </div>
+                  )}
+
+                  {selectedTxForDetail.accountInfo && (
+                    <div className={`text-xs flex items-center gap-1.5 ${isEmailSource ? 'text-amber-900' : 'text-emerald-900'}`}>
+                      <span className="font-semibold">{isGu ? 'ખાતું / PRAN:' : 'Account / PRAN:'}</span>
+                      <span className="bg-white px-2 py-0.5 rounded-lg border border-stone-200 font-mono font-bold text-[11px] text-stone-800">
+                        {selectedTxForDetail.accountInfo}
+                      </span>
+                    </div>
+                  )}
+
+                  {selectedTxForDetail.referenceNumber && (
+                    <div className={`text-xs flex items-center gap-1.5 ${isEmailSource ? 'text-amber-900' : 'text-emerald-900'}`}>
+                      <span className="font-semibold">{isGu ? 'રેફરન્સ / UTR / Ack:' : 'Ref/UTR/Ack:'}</span>
+                      <span className="bg-white px-2 py-0.5 rounded-lg border border-stone-200 font-mono font-bold text-[11px] text-stone-800">
+                        {selectedTxForDetail.referenceNumber}
+                      </span>
+                    </div>
+                  )}
+
+                  {selectedTxForDetail.evidence && (
+                    <div className="pt-1">
+                      <span className="text-[10px] font-bold text-stone-500 uppercase tracking-wider block mb-1">
+                        {isGu ? (isEmailSource ? 'ઓરિજિનલ ઈમેલ વિગત / પુરાવો:' : 'ઓરિજિનલ SMS ટેક્સ્ટ:') : 'Raw Evidence Content:'}
+                      </span>
+                      <p className={`text-[11px] font-mono text-stone-700 bg-white p-2.5 rounded-xl border whitespace-pre-wrap break-words leading-relaxed ${
+                        isEmailSource ? 'border-amber-100' : 'border-emerald-100'
+                      }`}>
+                        {selectedTxForDetail.evidence}
+                      </p>
+                    </div>
+                  )}
                 </div>
-
-                {selectedTxForDetail.evidenceSender && (
-                  <div className="text-xs text-emerald-900 flex items-center gap-1.5">
-                    <span className="font-semibold">{isGu ? 'મોકલનાર બેંક:' : 'Sender:'}</span>
-                    <span className="bg-white px-2 py-0.5 rounded-lg border border-emerald-200 font-mono font-bold text-[11px]">
-                      {selectedTxForDetail.evidenceSender}
-                    </span>
-                  </div>
-                )}
-
-                {selectedTxForDetail.referenceNumber && (
-                  <div className="text-xs text-emerald-900 flex items-center gap-1.5">
-                    <span className="font-semibold">{isGu ? 'રેફરન્સ / UTR:' : 'Ref/UTR:'}</span>
-                    <span className="bg-white px-2 py-0.5 rounded-lg border border-emerald-200 font-mono font-bold text-[11px]">
-                      {selectedTxForDetail.referenceNumber}
-                    </span>
-                  </div>
-                )}
-
-                {selectedTxForDetail.evidence && (
-                  <div className="pt-1">
-                    <span className="text-[10px] font-bold text-stone-500 uppercase tracking-wider block mb-1">
-                      {isGu ? 'ઓરિજિનલ SMS ટેક્સ્ટ:' : 'Raw SMS Text:'}
-                    </span>
-                    <p className="text-[11px] font-mono text-stone-700 bg-white p-2.5 rounded-xl border border-emerald-100 whitespace-pre-wrap break-words leading-relaxed">
-                      {selectedTxForDetail.evidence}
-                    </p>
-                  </div>
-                )}
-              </div>
-            )}
+              );
+            })()}
 
             {/* Receipt Image / Screenshot */}
             {selectedTxForDetail.evidenceImage && (

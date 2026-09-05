@@ -21,7 +21,9 @@ import {
   AlertCircle, 
   RefreshCw,
   Layers,
-  Share2
+  Share2,
+  Mail,
+  Tag
 } from 'lucide-react';
 import { LANGUAGES, TranslationStrings } from '../data/languages';
 import { Category, Transaction, UserProfile, SecurityConfig, DiaryEntry, BorrowedLentRecord } from '../types';
@@ -44,6 +46,7 @@ import { NativeBridgeService, NativePermissionsStatus } from '../services/native
 import { CloudSyncService, CloudSyncConfig } from '../services/cloudSync';
 import { AppVaultData } from '../services/vaultStorage';
 import { parseClearSmsBackup } from '../services/clearSmsImporter';
+import { CategoryRuleEngine, RuleDefinition, BUILTIN_CATEGORY_RULES } from '../services/categoryRuleEngine';
 
 interface SettingsScreenProps {
   currentLang: string;
@@ -70,6 +73,7 @@ interface SettingsScreenProps {
   onUpdateSecurityConfig: (cfg: Partial<SecurityConfig>) => void;
   savedPassphraseWords: string[];
   onOpenSMSModal: () => void;
+  onOpenEmailSync?: () => void;
 }
 
 export const SettingsScreen: React.FC<SettingsScreenProps> = ({
@@ -97,6 +101,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   onUpdateSecurityConfig,
   savedPassphraseWords,
   onOpenSMSModal,
+  onOpenEmailSync,
 }) => {
   const { isInstallable, install } = usePWAInstall();
   const [langSearch, setLangSearch] = useState('');
@@ -278,6 +283,53 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   const showNotice = (msg: string) => {
     setNotificationMsg(msg);
     setTimeout(() => setNotificationMsg(null), 3500);
+  };
+
+  // User Category Rules & Re-run (ClearSMS Pattern)
+  const [userCategoryRules, setUserCategoryRules] = useState<RuleDefinition[]>(() => CategoryRuleEngine.getUserRules());
+  const [ruleKeyword, setRuleKeyword] = useState('');
+  const [ruleTargetCategory, setRuleTargetCategory] = useState(categories[0]?.name || 'Shopping');
+  const [isApplyingRules, setIsApplyingRules] = useState(false);
+
+  const handleAddNewRule = () => {
+    if (!ruleKeyword.trim()) return;
+    const rule = CategoryRuleEngine.learnCategoryRule(ruleKeyword, ruleTargetCategory);
+    setUserCategoryRules(CategoryRuleEngine.getUserRules());
+    const { updatedTransactions, updatedCount } = CategoryRuleEngine.recategorizePastTransactions(transactions, rule);
+    if (updatedCount > 0) {
+      onRestoreTransactions(updatedTransactions);
+      showNotice(isGu ? `નવો રૂલ બન્યો અને ${updatedCount} વ્યવહારો આપોઆપ અપડેટ થયા!` : `Rule created and ${updatedCount} transactions updated!`);
+    } else {
+      showNotice(isGu ? 'નવો કેટેગરી રૂલ સાચવવામાં આવ્યો!' : 'Category rule saved successfully!');
+    }
+    setRuleKeyword('');
+  };
+
+  const handleReapplyAllRules = () => {
+    setIsApplyingRules(true);
+    const allRules = CategoryRuleEngine.getAllRules();
+    let currentTxs = [...transactions];
+    let totalUpdated = 0;
+
+    for (const rule of allRules) {
+      const { updatedTransactions, updatedCount } = CategoryRuleEngine.recategorizePastTransactions(currentTxs, rule);
+      currentTxs = updatedTransactions;
+      totalUpdated += updatedCount;
+    }
+
+    onRestoreTransactions(currentTxs);
+    setIsApplyingRules(false);
+    showNotice(
+      isGu
+        ? `તમામ રૂલ્સ સફળતાપૂર્વક લાગુ થયા! ${totalUpdated} વ્યવહારો અપડેટ થયા.`
+        : `All rules applied! ${totalUpdated} transactions updated.`
+    );
+  };
+
+  const handleDeleteUserRule = (id: string) => {
+    CategoryRuleEngine.deleteUserRule(id);
+    setUserCategoryRules(CategoryRuleEngine.getUserRules());
+    showNotice(isGu ? 'રૂલ હટાવવામાં આવ્યો.' : 'Rule deleted.');
   };
 
   const filteredLanguages = LANGUAGES.filter(
@@ -745,6 +797,115 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
             <Database className="w-4 h-4 text-emerald-700" />
             <span>{isGu ? 'ClearSMS Backup (.json) સીધું ઇમ્પોર્ટ કરો' : 'Import ClearSMS Backup (.json)'}</span>
           </button>
+        </div>
+
+        {/* Financial Email Sync Card (Gmail & .EML Statement Parser) */}
+        <div className="p-4 rounded-2xl bg-amber-50/70 border border-amber-200 space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Mail className="w-4 h-4 text-amber-700" />
+              <span className="text-xs font-bold text-amber-950">
+                {isGu ? 'નાણાકીય ઈમેલ સિંક સિસ્ટમ (Gmail & .EML)' : 'Financial Email Sync (Gmail & .EML)'}
+              </span>
+            </div>
+            {onOpenEmailSync && (
+              <button
+                type="button"
+                onClick={onOpenEmailSync}
+                className="py-1.5 px-3 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs transition cursor-pointer flex items-center gap-1.5 shadow-2xs"
+              >
+                <Mail className="w-3.5 h-3.5" />
+                <span>{isGu ? 'ઈમેલ સ્કેન શરૂ કરો' : 'Start Email Sync'}</span>
+              </button>
+            )}
+          </div>
+          <p className="text-[11px] text-amber-900 leading-relaxed">
+            {isGu
+              ? 'Gmail API અથવા ઓફલાઇન .eml ફાઇલ દ્વારા CRA-NSDL / Protean NPS યોગદાન, પગાર પર્ચી અને મ્યુચ્યુઅલ ફંડ એલોકેશન સ્કેન કરો (૧૦૦% ઓફલાઇન અને પ્રાઇવેટ).'
+              : 'Automatically extract CRA-NSDL NPS contributions, salary slips, and mutual fund allotments via Gmail API or offline .eml file import (100% client-side privacy).'}
+          </p>
+        </div>
+
+        {/* ClearSMS Smart Auto-Category Rule Engine Card */}
+        <div className="p-4 rounded-2xl bg-emerald-50/70 border border-emerald-200 space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Tag className="w-4 h-4 text-emerald-700" />
+              <span className="text-xs font-bold text-emerald-950">
+                {isGu ? 'સ્માર્ટ કેટેગરી રૂલ્સ એન્જિન (Auto-Category Rules)' : 'Smart Category Rule Engine (ClearSMS Pattern)'}
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={handleReapplyAllRules}
+              disabled={isApplyingRules}
+              className="py-1.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs transition cursor-pointer flex items-center gap-1.5 shadow-2xs disabled:opacity-50"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isApplyingRules ? 'animate-spin' : ''}`} />
+              <span>{isGu ? 'તમામ વ્યવહારો પર રૂલ્સ ફરી ચલાવો' : 'Re-apply Rules'}</span>
+            </button>
+          </div>
+
+          <p className="text-[11px] text-emerald-900 leading-relaxed">
+            {isGu
+              ? `સિસ્ટમમાં ${BUILTIN_CATEGORY_RULES.length} બિલ્ટ-ઇન અને ${userCategoryRules.length} કસ્ટમ રૂલ્સ સક્રિય છે. જ્યારે પણ તમે કોઈ ખર્ચની કેટેગરી બદલો છો, ત્યારે સિસ્ટમ ભવિષ્યના અને અગાઉના તમામ વ્યવહારો માટે આપમેળે નવો રૂલ બનાવી લે છે.`
+              : `${BUILTIN_CATEGORY_RULES.length} built-in & ${userCategoryRules.length} custom rules active. Whenever you assign a category to a vendor, the system remembers and automatically auto-classifies past & future transactions.`}
+          </p>
+
+          {/* Quick Add Rule Form */}
+          <div className="p-2.5 rounded-xl bg-white border border-emerald-200 flex flex-wrap sm:flex-nowrap items-center gap-2">
+            <input
+              type="text"
+              placeholder={isGu ? 'વેન્ડર / કીવર્ડ (દા.ત. Swiggy, Amazon)' : 'Keyword (e.g. Swiggy, Amazon)'}
+              value={ruleKeyword}
+              onChange={(e) => setRuleKeyword(e.target.value)}
+              className="text-xs px-2.5 py-1.5 rounded-lg border border-stone-200 flex-1 outline-none text-stone-800"
+            />
+            <select
+              value={ruleTargetCategory}
+              onChange={(e) => setRuleTargetCategory(e.target.value)}
+              className="text-xs px-2 py-1.5 rounded-lg border border-stone-200 bg-stone-50 outline-none text-stone-700 font-medium"
+            >
+              {categories.map((c) => (
+                <option key={c.id} value={c.name}>
+                  {isGu && c.nameGu ? c.nameGu : c.name}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              onClick={handleAddNewRule}
+              className="py-1.5 px-3 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs transition cursor-pointer shrink-0"
+            >
+              {isGu ? '+ રૂલ ઉમેરો' : '+ Add Rule'}
+            </button>
+          </div>
+
+          {/* User rules list if any */}
+          {userCategoryRules.length > 0 && (
+            <div className="space-y-1 pt-1 max-h-36 overflow-y-auto">
+              <span className="text-[10px] font-bold text-stone-500 uppercase tracking-wider block">
+                {isGu ? 'તમારા શીખેલા રૂલ્સ:' : 'Your Learned Rules:'}
+              </span>
+              {userCategoryRules.map((r) => (
+                <div key={r.id} className="flex items-center justify-between p-1.5 rounded-lg bg-white border border-stone-200 text-xs">
+                  <div className="truncate min-w-0 pr-2">
+                    <span className="font-bold text-stone-800">{r.name}</span>
+                    <span className="text-stone-400 mx-1">→</span>
+                    <span className="text-emerald-700 font-semibold">{r.action.category}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteUserRule(r.id)}
+                    className="p-1 text-stone-400 hover:text-rose-600 rounded cursor-pointer"
+                    title="Delete Rule"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Cloud Vault Card */}

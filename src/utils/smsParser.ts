@@ -6,6 +6,7 @@ import {
   resolveBankFromSender,
   INVESTMENT_PATTERNS
 } from './financialKnowledgeBase';
+import { CategoryRuleEngine } from '../services/categoryRuleEngine';
 
 export interface ParsedExpenseMessage {
   type: TransactionType;
@@ -428,9 +429,18 @@ export function parseTransactionMessage(
   // 10. Extract Source / Bank Name (Canonical from ClearSMS Brand Table)
   const bankOrSource = extractBankOrSource(options?.sender, clean);
 
-  // 11. Categorization via Comprehensive Financial Knowledge Base
+  // 11. Categorization via CategoryRuleEngine (User & Builtin Rules) with Knowledge Base Fallback
   const categoryResult = categorizeFinancialText(clean, options?.sender, type);
-  let category = categoryResult.category;
+  let category: string = categoryResult.category;
+  let confidence: number = categoryResult.confidence;
+  let needsReview: boolean = categoryResult.needsReview || categoryResult.confidence < 0.85;
+
+  const ruleMatch = CategoryRuleEngine.evaluate(options?.sender, clean);
+  if (ruleMatch && ruleMatch.category) {
+    category = ruleMatch.category;
+    confidence = 0.98;
+    needsReview = false;
+  }
 
   // Match with existing categories in app if provided
   if (categories.length > 0) {
@@ -467,8 +477,8 @@ export function parseTransactionMessage(
     bankOrSource,
     evidence: clean,
     evidenceSource: source,
-    confidence: categoryResult.confidence,
-    needsReview: categoryResult.needsReview || categoryResult.confidence < 0.85,
+    confidence,
+    needsReview,
   };
 }
 

@@ -37,6 +37,8 @@ import { MigrationManager } from './services/dataMigration';
 import { NativeBridgeService } from './services/nativeBridge';
 import { parseTransactionMessage, ParsedExpenseMessage } from './utils/smsParser';
 import { VaultStorage } from './services/vaultStorage';
+import { FinancialEmailSyncModal } from './components/FinancialEmailSyncModal';
+import { CategoryRuleEngine } from './services/categoryRuleEngine';
 
 // Sequential data migration & backward compatibility (§21)
 MigrationManager.runMigrations();
@@ -104,6 +106,9 @@ export default function App() {
 
   // Android SMS Permission modal state
   const [isSmsModalOpen, setIsSmsModalOpen] = useState(false);
+
+  // Financial Email Sync modal state
+  const [isEmailSyncModalOpen, setIsEmailSyncModalOpen] = useState(false);
 
   // Assistant drawer / modal state
   const [isAiModalOpen, setIsAiModalOpen] = useState(false);
@@ -580,14 +585,37 @@ export default function App() {
         id: editingTransaction.id,
         updatedAt: new Date().toISOString(),
       };
-      setTransactions((prev) => prev.map((t) => (t.id === editingTransaction.id ? updated : t)));
+
+      // Auto-learn category rule from user edit (ClearSMS Rule Engine pattern)
+      const keyword = (newTx.vendorOrPerson || newTx.title || '').trim();
+      if (keyword && newTx.category) {
+        const learnedRule = CategoryRuleEngine.learnCategoryRule(keyword, newTx.category);
+        const { updatedTransactions } = CategoryRuleEngine.recategorizePastTransactions(
+          transactions.map((t) => (t.id === editingTransaction.id ? updated : t)),
+          learnedRule
+        );
+        setTransactions(updatedTransactions);
+      } else {
+        setTransactions((prev) => prev.map((t) => (t.id === editingTransaction.id ? updated : t)));
+      }
       setEditingTransaction(null);
     } else {
       const tx: Transaction = {
         ...newTx,
         id: `tx-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
       };
-      setTransactions((prev) => [tx, ...prev]);
+
+      const keyword = (newTx.vendorOrPerson || newTx.title || '').trim();
+      if (keyword && newTx.category) {
+        const learnedRule = CategoryRuleEngine.learnCategoryRule(keyword, newTx.category);
+        const { updatedTransactions } = CategoryRuleEngine.recategorizePastTransactions(
+          [tx, ...transactions],
+          learnedRule
+        );
+        setTransactions(updatedTransactions);
+      } else {
+        setTransactions((prev) => [tx, ...prev]);
+      }
     }
   };
 
@@ -629,24 +657,42 @@ export default function App() {
     setBorrowedLentRecords((prev) => prev.filter((r) => r.id !== id));
   };
 
-  // Pending AI auto-detect Handlers
-  const handleConfirmAiMessage = (msg: PendingAIMessage) => {
+  // Pending AI auto-detect Handlers (Accepts message ID or object, with customCategory support)
+  const handleConfirmAiMessage = (target: string | PendingAIMessage, customCategory?: string) => {
+    const msg = typeof target === 'string' ? pendingAiMessages.find((m) => m.id === target) : target;
+    if (!msg) return;
+
+    const finalCategory = customCategory || msg.parsedData.category;
     const newTx: Transaction = {
       id: `tx-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
       type: msg.parsedData.type,
       amount: msg.parsedData.amount,
       title: msg.parsedData.title,
-      category: msg.parsedData.category,
+      category: finalCategory,
       date: new Date().toISOString().split('T')[0],
       time: new Date().toTimeString().split(' ')[0].substring(0, 5),
       paymentMode: msg.parsedData.paymentMode,
       vendorOrPerson: msg.parsedData.vendorOrPerson,
       notes: msg.parsedData.notes,
       evidence: msg.rawText,
+      evidenceSender: msg.sender,
       evidenceSource: 'sms',
       isAiGenerated: true,
     };
-    setTransactions((prev) => [newTx, ...prev]);
+
+    // Auto-learn category rule from user confirmation (ClearSMS Rule Engine pattern)
+    const keyword = (msg.parsedData.vendorOrPerson || msg.parsedData.title || '').trim();
+    if (keyword && finalCategory) {
+      const learnedRule = CategoryRuleEngine.learnCategoryRule(keyword, finalCategory, { sender: msg.sender });
+      const { updatedTransactions } = CategoryRuleEngine.recategorizePastTransactions(
+        [newTx, ...transactions],
+        learnedRule
+      );
+      setTransactions(updatedTransactions);
+    } else {
+      setTransactions((prev) => [newTx, ...prev]);
+    }
+
     setPendingAiMessages((prev) => prev.filter((m) => m.id !== msg.id));
   };
 
@@ -921,6 +967,7 @@ export default function App() {
             currentLang={currentLang}
             profile={profile}
             onTriggerScan={handleScanSMS}
+            onOpenEmailSync={() => setIsEmailSyncModalOpen(true)}
           />
         )}
 
@@ -988,6 +1035,7 @@ export default function App() {
             onUpdateSecurityConfig={handleUpdateSecurityConfig}
             savedPassphraseWords={savedPassphraseWords}
             onOpenSMSModal={() => setIsSmsModalOpen(true)}
+            onOpenEmailSync={() => setIsEmailSyncModalOpen(true)}
           />
         )}
       </main>
@@ -1094,6 +1142,18 @@ export default function App() {
           }}
         />
       )}
+
+      {/* Financial Email Sync Modal (Gmail OAuth & Local .EML / Statement Importer) */}
+      <FinancialEmailSyncModal
+        isOpen={isEmailSyncModalOpen}
+        onClose={() => setIsEmailSyncModalOpen(false)}
+        existingTransactions={transactions}
+        onImportTransactions={(imported) => {
+          setTransactions((prev) => [...imported, ...prev]);
+        }}
+        currency={currency}
+        isGu={currentLang === 'gu'}
+      />
     </div>
   );
 }
