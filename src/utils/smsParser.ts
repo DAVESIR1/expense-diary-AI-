@@ -3,6 +3,7 @@ import {
   isSpamOrNonTransaction,
   isReminderOrDueNotice,
   categorizeFinancialText,
+  resolveBankFromSender,
   INVESTMENT_PATTERNS
 } from './financialKnowledgeBase';
 
@@ -39,59 +40,44 @@ export function extractDateAndTime(text: string, timestamp?: number): { date: st
   let date = fallbackDate.toISOString().split('T')[0];
   let time = fallbackDate.toTimeString().substring(0, 5);
 
-  // 1. Check for named month: e.g. "04-Sep-2026", "4 Sep 26", "04-Sep-24", "dated 04Sep24"
-  const namedMonthMatch = text.match(
-    /(?:on|dated)?\s*(\d{1,2})[- ](jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*[- ](\d{2,4})/i
-  );
-  if (namedMonthMatch) {
-    const day = namedMonthMatch[1].padStart(2, '0');
-    const month = MONTH_MAP[namedMonthMatch[2].toLowerCase().substring(0, 3)];
-    let year = namedMonthMatch[3];
-    if (year.length === 2) year = `20${year}`;
-    if (month) {
-      date = `${year}-${month}-${day}`;
+  // Match: 07-Feb-23, 07/02/2023, 07-02-23, 07.02.2023
+  const dateMatch = text.match(/\b(\d{1,2})[-/.]([a-z]{3}|\d{1,2})[-/.](\d{2,4})\b/i);
+  if (dateMatch) {
+    const day = dateMatch[1].padStart(2, '0');
+    let month = dateMatch[2].toLowerCase();
+    if (MONTH_MAP[month]) {
+      month = MONTH_MAP[month];
+    } else {
+      month = month.padStart(2, '0');
     }
-  } else {
-    // 2. Numeric date: e.g. "04/09/2026", "04-09-26", "04.09.2026"
-    const numericDateMatch = text.match(
-      /(?:on|dated)?\s*(\d{1,2})[-/.](\d{1,2})[-/.](\d{2,4})/i
-    );
-    if (numericDateMatch) {
-      const p1 = parseInt(numericDateMatch[1], 10);
-      const p2 = parseInt(numericDateMatch[2], 10);
-      let year = numericDateMatch[3];
-      if (year.length === 2) year = `20${year}`;
-
-      // In Indian banks, DD/MM/YYYY is standard format
-      if (p1 <= 31 && p2 <= 12) {
-        const day = String(p1).padStart(2, '0');
-        const month = String(p2).padStart(2, '0');
-        date = `${year}-${month}-${day}`;
-      }
+    let year = dateMatch[3];
+    if (year.length === 2) {
+      year = `20${year}`;
     }
+    date = `${year}-${month}-${day}`;
   }
 
-  // 3. Time extraction: e.g. "at 14:35", "14:35:10", "at 02:30 PM", "10:15am"
-  const timeMatch = text.match(
-    /(?:at|time)?\s*(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(am|pm)?/i
-  );
+  // Match time: 15:35:06, 03:30 PM, 14:20
+  const timeMatch = text.match(/\b(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(am|pm)?\b/i);
   if (timeMatch) {
     let hours = parseInt(timeMatch[1], 10);
     const minutes = timeMatch[2];
-    const meridiem = timeMatch[4] ? timeMatch[4].toLowerCase() : null;
+    const ampm = timeMatch[4] ? timeMatch[4].toLowerCase() : null;
 
-    if (meridiem === 'pm' && hours < 12) hours += 12;
-    if (meridiem === 'am' && hours === 12) hours = 0;
+    if (ampm === 'pm' && hours < 12) hours += 12;
+    if (ampm === 'am' && hours === 12) hours = 0;
 
-    if (hours >= 0 && hours <= 23) {
-      time = `${String(hours).padStart(2, '0')}:${minutes}`;
-    }
+    time = `${hours.toString().padStart(2, '0')}:${minutes}`;
   }
 
   return { date, time };
 }
 
 export function extractBankOrSource(sender?: string, body?: string): string | undefined {
+  // 1. Try ClearSMS Canonical Bank Directory first
+  const canonical = resolveBankFromSender(sender, body);
+  if (canonical) return canonical;
+
   const cleanSender = (sender || '').toUpperCase();
   const cleanBody = (body || '').toUpperCase();
 
@@ -111,6 +97,12 @@ export function extractBankOrSource(sender?: string, body?: string): string | un
   if (cleanSender.includes('MAXLIF') || cleanBody.includes('MAX LIFE')) return 'Max Life';
   if (cleanSender.includes('POLBAZ') || cleanBody.includes('POLICYBAZAAR')) return 'PolicyBazaar';
 
+  // Payment channels & wallets
+  if (cleanSender.includes('GPAY') || cleanBody.includes('GOOGLE PAY')) return 'Google Pay';
+  if (cleanSender.includes('PHONEPE') || cleanBody.includes('PHONEPE')) return 'PhonePe';
+  if (cleanSender.includes('CREDB') || cleanBody.includes('CRED')) return 'CRED';
+  if (cleanSender.includes('AMAZON') || cleanBody.includes('AMAZON PAY')) return 'Amazon Pay';
+
   // Banks
   if (cleanSender.includes('HDFC') || cleanBody.includes('HDFC BANK')) return 'HDFC Bank';
   if (cleanSender.includes('SBI') || cleanBody.includes('STATE BANK OF INDIA') || cleanBody.includes('SBI')) return 'SBI';
@@ -124,10 +116,6 @@ export function extractBankOrSource(sender?: string, body?: string): string | un
   if (cleanSender.includes('INDUS') || cleanBody.includes('INDUSIND')) return 'IndusInd Bank';
   if (cleanSender.includes('PAYTM') || cleanBody.includes('PAYTM PAYMENTS BANK')) return 'Paytm Bank';
   if (cleanSender.includes('AIRTEL') || cleanBody.includes('AIRTEL PAYMENTS BANK')) return 'Airtel Payments Bank';
-  if (cleanSender.includes('GPAY') || cleanBody.includes('GOOGLE PAY')) return 'Google Pay';
-  if (cleanSender.includes('PHONEPE') || cleanBody.includes('PHONEPE')) return 'PhonePe';
-  if (cleanSender.includes('CREDB') || cleanBody.includes('CRED')) return 'CRED';
-  if (cleanSender.includes('AMAZON') || cleanBody.includes('AMAZON PAY')) return 'Amazon Pay';
 
   // If sender has standard Indian alpha code like "VM-IDFCFB", extract IDFCFB
   const parts = cleanSender.split('-');
@@ -146,36 +134,83 @@ export function parseTransactionMessage(
 ): ParsedExpenseMessage | null {
   if (!text || text.trim().length < 8) return null;
 
+  // In India, automated bank transactional SMS NEVER come from personal 10-digit mobile numbers
+  if (options?.sender) {
+    const rawSender = options.sender.replace(/[\s-]/g, '');
+    if (/^(?:\+?91|0)?[6-9]\d{9}$/.test(rawSender)) {
+      return null;
+    }
+  }
+
   const clean = text.trim();
   const lower = clean.toLowerCase();
 
-  // 1. Strict Spam, Promotional Ads & OTP Filter
+  // 1. Strict Spam, Promotional Ads, Loan Offers & OTP Filter (ClearSMS Guards)
   if (isSpamOrNonTransaction(clean)) {
     return null;
   }
 
-  // 2. Strict Reminder, Bill Notice, Recharge & Insurance Renewal Filter (CRITICAL)
-  // Insurance renewals, bill statements, and recharge reminders must NEVER be added as expenses!
+  // 2. Strict Reminder, Bill Notice, Statement & Insurance Renewal Filter (ClearSMS Guards)
   if (isReminderOrDueNotice(clean)) {
     return null;
   }
 
-  // 3. Extract Amount
-  // Supports:
-  // a) Currency prefix/suffix: Rs. 500, Rs 500.00, INR 1,200.50, ₹450, 500.00 INR
-  // b) Action keyword: "debited by 250.0", "credited by 500", "paid 150 to" (No adjacent currency)
-  let amount = 0;
-
-  const currencyAmountMatch = clean.match(/(?:rs\.?|inr|₹|\$|€|£)\s*([\d,]+(?:\.\d{1,2})?)|([\d,]+(?:\.\d{1,2})?)\s*(?:rs\.?|inr)/i);
-  if (currencyAmountMatch) {
-    const rawAmt = currencyAmountMatch[1] || currencyAmountMatch[2];
-    amount = parseFloat(rawAmt.replace(/,/g, ''));
+  // 3. ClearSMS Balance & Credit Limit Exclusion (Prevents Avl Bal or Avl Lmt from becoming transaction amount)
+  const excludedSpans: Array<[number, number]> = [];
+  const balRegex = /(?:avl|avbl|avail(?:able)?)\.?\s*bal(?:ance)?\.?(?:\s+(?:in|for)\s+(?:your\s+)?a\/c\s*(?:no\.?)?\s*[Xx*]*\d+)?\s*(?:is|:|=)?\s*(?:INR|Rs\.?|₹)\s*([\d,]+(?:\.\d{1,2})?)/gi;
+  let bMatch: RegExpExecArray | null;
+  while ((bMatch = balRegex.exec(clean)) !== null) {
+    excludedSpans.push([bMatch.index, bMatch.index + bMatch[0].length]);
   }
 
+  const limitRegex = /av(?:l|bl|ailable)?\.?\s*(?:credit\s+)?(?:lmt|limit)\s*:?\s*(?:is\s+)?(?:INR|Rs\.?|₹)\s*([\d,]+(?:\.\d{1,2})?)/gi;
+  let lMatch: RegExpExecArray | null;
+  while ((lMatch = limitRegex.exec(clean)) !== null) {
+    excludedSpans.push([lMatch.index, lMatch.index + lMatch[0].length]);
+  }
+
+  // 4. Extract Amount outside excluded spans (ClearSMS approach)
+  let amount = 0;
+
+  // 4a. Currency Prefix Match (INR 6698, Rs. 500, ₹1,200) - Standard Indian banking format
+  const prefixRegex = /(?:INR|Rs\.?|₹|\$|€|£)\s*([\d,]+(?:\.\d{1,2})?)/gi;
+  let pMatch: RegExpExecArray | null;
+  while ((pMatch = prefixRegex.exec(clean)) !== null) {
+    const matchIndex = pMatch.index;
+    const isExcluded = excludedSpans.some(([start, end]) => matchIndex >= start && matchIndex <= end);
+    if (!isExcluded) {
+      const parsed = parseFloat(pMatch[1].replace(/,/g, ''));
+      if (parsed > 0 && !isNaN(parsed)) {
+        amount = parsed;
+        break;
+      }
+    }
+  }
+
+  // 4b. Decimal Currency Suffix Match (e.g. 500.00 INR) if no prefix matched
   if (!amount || isNaN(amount) || amount <= 0) {
-    const actionAmountMatch = clean.match(/(?:debited|credited|paid|spent|sent|received|transferred|withdrawn)\s+(?:by|for|of|with|sum of)?\s*(?:rs\.?|inr|₹)?\s*([\d,]+(?:\.\d{1,2})?)/i);
-    if (actionAmountMatch && actionAmountMatch[1]) {
-      amount = parseFloat(actionAmountMatch[1].replace(/,/g, ''));
+    const suffixRegex = /([\d,]+\.\d{1,2})\s*(?:INR|Rs\.?|₹)/gi;
+    let sMatch: RegExpExecArray | null;
+    while ((sMatch = suffixRegex.exec(clean)) !== null) {
+      const matchIndex = sMatch.index;
+      const isExcluded = excludedSpans.some(([start, end]) => matchIndex >= start && matchIndex <= end);
+      if (!isExcluded) {
+        const parsed = parseFloat(sMatch[1].replace(/,/g, ''));
+        if (parsed > 0 && !isNaN(parsed)) {
+          amount = parsed;
+          break;
+        }
+      }
+    }
+  }
+
+  // 4c. Fallback to action keyword amount only if not followed by card or account
+  if (!amount || isNaN(amount) || amount <= 0) {
+    if (!/\b(?:spent|paid|debited|sent)\s+(?:on\s+)?card/i.test(clean) && !/\b(?:debited|credited)\s+from\s+a\/c/i.test(clean)) {
+      const actionAmountMatch = clean.match(/(?:debited|credited|paid|spent|sent|received|transferred|withdrawn)\s+(?:by|for|of|with|sum of)?\s*(?:rs\.?|inr|₹)?\s*([\d,]+(?:\.\d{1,2})?)/i);
+      if (actionAmountMatch && actionAmountMatch[1]) {
+        amount = parseFloat(actionAmountMatch[1].replace(/,/g, ''));
+      }
     }
   }
 
@@ -190,26 +225,24 @@ export function parseTransactionMessage(
     return null;
   }
 
-  // 4. Determine Flow Type (Debit / Credit)
-  const debitPatterns = [
+  // 5. Determine Flow Type (Debit / Credit) with Future-Tense lookbehind safety
+  const debitKeywords = [
     /\bdebited\b/i,
     /\bpaid\b/i,
     /\bspent\b/i,
     /\bsent\b/i,
     /\btransferred\b/i,
-    /\bpurchase\b/i,
+    /\bpurchased?\b/i,
     /\bwithdrawn\b/i,
     /\bcharged\b/i,
     /\bdr\b/i,
-    /\bpayment\b/i,
-    /\btxn\b/i,
     /\bupi\/dr\b/i,
   ];
 
-  const creditPatterns = [
+  const creditKeywords = [
     /\bcredited\b/i,
     /\breceived\b/i,
-    /\brefund\b/i,
+    /\brefund(?:ed)?\b/i,
     /\bdeposited\b/i,
     /\bsalary credited\b/i,
     /\bcr\b/i,
@@ -218,10 +251,51 @@ export function parseTransactionMessage(
   ];
 
   let rawType: TransactionType | null = null;
-  if (debitPatterns.some((p) => p.test(lower))) {
+  let firstDebitIndex = -1;
+  let firstCreditIndex = -1;
+
+  for (const dk of debitKeywords) {
+    const m = dk.exec(lower);
+    if (m) {
+      // Lookbehind 20 characters for future tense
+      const pre = lower.substring(Math.max(0, m.index - 20), m.index);
+      if (!/\b(?:will|shall|would)\s+be\s*$/i.test(pre) && !/\bis\s+scheduled\s+to\s+be\s*$/i.test(pre)) {
+        if (firstDebitIndex === -1 || m.index < firstDebitIndex) {
+          firstDebitIndex = m.index;
+        }
+      }
+    }
+  }
+
+  for (const ck of creditKeywords) {
+    const m = ck.exec(lower);
+    if (m) {
+      const pre = lower.substring(Math.max(0, m.index - 20), m.index);
+      if (!/\b(?:will|shall|would)\s+be\s*$/i.test(pre) && !/\bis\s+scheduled\s+to\s+be\s*$/i.test(pre)) {
+        if (firstCreditIndex === -1 || m.index < firstCreditIndex) {
+          firstCreditIndex = m.index;
+        }
+      }
+    }
+  }
+
+  if (firstDebitIndex !== -1 && firstCreditIndex !== -1) {
+    rawType = firstDebitIndex <= firstCreditIndex ? 'expense' : 'income';
+  } else if (firstDebitIndex !== -1) {
     rawType = 'expense';
-  } else if (creditPatterns.some((p) => p.test(lower))) {
+  } else if (firstCreditIndex !== -1) {
     rawType = 'income';
+  } else {
+    // Check ClearSMS Verbless Debit Templates:
+    // 1) Card-network template: "Txn Rs.X On Card XX at Merchant"
+    const isCardTxnTemplate = /(?:^|\n)\s*txn\s+(?:INR|Rs\.?|₹)\s*[\d,]/i.test(clean) && /\bat\s+\S/i.test(clean);
+    // 2) Biller confirmation: "Payment of Rs.X successful/done/completed"
+    const isPaymentDone = /\bpayment\s+of\s+(?:INR|Rs\.?|₹)\s*[\d,]+[^\n]{0,80}?\b(?:successful|completed|done)\b/i.test(clean);
+    if (isCardTxnTemplate || isPaymentDone) {
+      rawType = 'expense';
+    } else {
+      return null;
+    }
   }
 
   // Special NPS & Investment Handling (Requirement 3 & 4):
@@ -235,15 +309,14 @@ export function parseTransactionMessage(
   } else if (rawType) {
     type = rawType;
   } else {
-    // If neither debit nor credit pattern matched, skip
     return null;
   }
 
-  // 5. Extract Payment Mode (UPI, Card, NetBanking, ATM)
+  // 6. Extract Payment Mode (UPI, Card, NetBanking, ATM)
   let paymentMode = 'UPI';
   if (/upi|gpay|phonepe|paytm|bhim|vpa/i.test(lower)) {
     paymentMode = 'UPI';
-  } else if (/credit card|debit card|visa|mastercard|rupay|card ending/i.test(lower)) {
+  } else if (/credit card|debit card|visa|mastercard|rupay|card ending|card no/i.test(lower)) {
     paymentMode = 'Card';
   } else if (/atm|cash/i.test(lower)) {
     paymentMode = 'ATM / Cash';
@@ -251,34 +324,86 @@ export function parseTransactionMessage(
     paymentMode = 'Bank Transfer';
   }
 
-  // 6. Extract Merchant / Vendor / Recipient
+  // 7. ClearSMS Smart Merchant Extraction & Normalization
   let vendorOrPerson = '';
-  // Match "to [Merchant]", "at [Merchant]", "towards [Merchant]", "from [Sender]"
-  const merchantMatch = clean.match(
-    /(?:to|at|towards|info|vpa|from)\s+([A-Za-z0-9\s.&'-]{2,30}?)(?:\s+(?:on|ref|utr|via|bal|avl|avail|a\/c|dated|\.|\n)|$)/i
-  );
-  if (merchantMatch && merchantMatch[1]) {
-    const candidate = merchantMatch[1].trim();
-    if (!/^(the|a|an|account|your|bank|rs|inr|pran)$/i.test(candidate)) {
-      vendorOrPerson = candidate;
+
+  // 7a. Multi-line Card spend template (e.g. Axis Bank "Spent / Card no. XX9941 / INR 6698 / 13-02-23 / Flipkart In / Avl Lmt...")
+  const lines = clean.split(/\r?\n/).map(l => l.trim()).filter(l => l.length > 0);
+  if (lines.length >= 3 && lines.some(l => /^spent/i.test(l)) && lines.some(l => /card\s+no/i.test(l))) {
+    const cand = lines.find(line => 
+      !/^spent/i.test(line) &&
+      !/card\s+no/i.test(line) &&
+      !/^(?:INR|Rs\.?|₹)\s*[\d,]/i.test(line) &&
+      !/^\d{1,2}[-/.]\d{1,2}/.test(line) &&
+      !/^(?:avl|avbl|available|bal|limit|sms\s+block|call|dial)/i.test(line) &&
+      /[a-zA-Z]/.test(line)
+    );
+    if (cand) {
+      vendorOrPerson = cand.replace(/[.,:;-]+$/, '').trim();
     }
   }
 
-  // 7. Extract Reference / UTR Number
-  let referenceNumber: string | undefined;
-  const refMatch = clean.match(/(?:ref|utr|txn|rrn|txn id|ref no|pran)[\s.:#]*([A-Za-z0-9]{6,16})/i);
-  if (refMatch && refMatch[1]) {
-    referenceNumber = refMatch[1];
+  // 7b. Preposition match ("to [Merchant]", "at [Merchant]", "towards [Merchant]")
+  if (!vendorOrPerson) {
+    const prepMatches = clean.matchAll(/\b(?:to|at|towards)\s+([A-Za-z][A-Za-z0-9@._&*-]*(?:\s+[A-Za-z0-9@._&*-]+){0,3})/gi);
+    for (const match of prepMatches) {
+      let candidate = match[1].trim();
+      if (/^(https?|www\.)/i.test(candidate)) continue;
+      if (/^(the|a|an|your|ur|account|a\/c|bank|no)\b/i.test(candidate)) continue;
+      if (/^(know|check|view|track|see|get|dispute|call|dial|sms)\b/i.test(candidate)) continue;
+      if (/^\d+$/.test(candidate) || candidate.length > 25 || /\d{5,}/.test(candidate)) continue;
+      candidate = candidate.replace(/^vpa\s+/i, '').trim();
+      candidate = candidate.split(/\s+(?:on|via|using|from|by|ref|refno|txn|utr|avl|avbl|info|not\b|dt|is|was)\b/i)[0].trim();
+      candidate = candidate.replace(/[.,:;-]+$/, '');
+      if (candidate.length >= 2 && !/^\d+$/.test(candidate)) {
+        if (candidate.includes('*')) {
+          const parts = candidate.split('*');
+          if (parts[1] && parts[1].trim().length > 1 && !/^(PEND|POS|ECOM|AUTH)$/i.test(parts[1].trim())) {
+            candidate = parts[1].trim();
+          } else if (parts[0] && parts[0].trim().length > 1) {
+            candidate = parts[0].trim();
+          }
+        }
+        vendorOrPerson = candidate;
+        break;
+      }
+    }
   }
 
-  // 8. Extract Account Information (e.g. A/c XX1234 or Card ending 5678)
+  // 7c. Info narration check (e.g. Info: IMPS/P2A/303915808095/NITINKUM/STATEBAN/)
+  if (!vendorOrPerson) {
+    const infoMatch = clean.match(/\bInfo\s*[-:.]\s*([^\n.]{2,80})/i);
+    if (infoMatch && infoMatch[1]) {
+      const parts = infoMatch[1].split(/[\/-]/).map(p => p.trim()).filter(p => p.length >= 3 && !/^\d+$/.test(p) && !/^(IMPS|NEFT|RTGS|UPI|P2A|P2P|MOB|XX+\d*|STATEBAN|AXISBAN|HDFCBAN|ICICIBAN)$/i.test(p));
+      if (parts.length > 0) {
+        vendorOrPerson = parts[0];
+      }
+    }
+  }
+
+  // 8. Extract Reference / UTR Number
+  let referenceNumber: string | undefined;
+  const refMatch = clean.match(/(?:ref|utr|txn|rrn|txn id|ref no|upi ref|pran)[\s.:#]*([A-Za-z0-9]{6,22})/i);
+  if (refMatch && refMatch[1] && /\d/.test(refMatch[1])) {
+    referenceNumber = refMatch[1].toUpperCase();
+  }
+
+  // 9. Extract Account Information (e.g. A/c XX1234 or Card ending 5678)
   let accountInfo: string | undefined;
-  const accMatch = clean.match(/(?:a\/c|account|card)[\s*xX-]*(\d{4})/i);
+  const accMatch = clean.match(/(?:a\/c|a\\c|acct|account|card)\s*(?:no\.?|number)?\s*(?:ending\s*)?(?:in\s+|with\s+)?[Xx*]*(\d{3,4})(?!\d)/i);
   if (accMatch && accMatch[1]) {
     accountInfo = `A/c *${accMatch[1]}`;
+  } else {
+    const cardTailMatch = clean.match(/(?:card\s+no\.?\s*|ending\s+)[Xx*]*(\d{4})/i);
+    if (cardTailMatch && cardTailMatch[1]) {
+      accountInfo = `Card *${cardTailMatch[1]}`;
+    }
   }
 
-  // 9. Categorization via Comprehensive Financial Knowledge Base
+  // 10. Extract Source / Bank Name (Canonical from ClearSMS Brand Table)
+  const bankOrSource = extractBankOrSource(options?.sender, clean);
+
+  // 11. Categorization via Comprehensive Financial Knowledge Base
   const categoryResult = categorizeFinancialText(clean, options?.sender, type);
   let category = categoryResult.category;
 
@@ -288,7 +413,7 @@ export function parseTransactionMessage(
     if (exact) category = exact.name;
   }
 
-  // 10. Descriptive Title
+  // 12. Descriptive Title
   let title = vendorOrPerson ? vendorOrPerson : type === 'income' ? 'Income Received' : 'Expense Payment';
   if (isNpsContribution) {
     title = 'NPS Contribution (રોકાણ)';
@@ -300,9 +425,6 @@ export function parseTransactionMessage(
 
   // Extract transaction date and time from SMS text or metadata timestamp
   const { date, time } = extractDateAndTime(clean, options?.timestamp);
-
-  // Extract source / bank name from sender code or message body
-  const bankOrSource = extractBankOrSource(options?.sender, clean);
 
   return {
     type,

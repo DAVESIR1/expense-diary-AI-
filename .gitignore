@@ -14,4 +14,5 @@ android/local.properties
 android/app/release.keystore
 android/app/debug.keystore
 android/app/src/main/assets/public/
-
+clearsms_ref/
+user_clearsms_backup.json

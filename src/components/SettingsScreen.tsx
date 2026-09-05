@@ -43,6 +43,7 @@ import { MultiRestoreModal } from './MultiRestoreModal';
 import { NativeBridgeService, NativePermissionsStatus } from '../services/nativeBridge';
 import { CloudSyncService, CloudSyncConfig } from '../services/cloudSync';
 import { AppVaultData } from '../services/vaultStorage';
+import { parseClearSmsBackup } from '../services/clearSmsImporter';
 
 interface SettingsScreenProps {
   currentLang: string;
@@ -407,6 +408,25 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           setPendingRestoreEnvelope(parsed as EncryptedBackupEnvelope);
           setRestorePassphraseInput(savedPassphraseWords.join(' '));
           setRestoreError(null);
+        } else if (parsed.formatVersion || Array.isArray(parsed.messages)) {
+          // ClearSMS App Backup File (.json)
+          const result = parseClearSmsBackup(text, transactions, categories);
+          if (result.success && result.newTransactions.length > 0) {
+            onRestoreTransactions([...transactions, ...result.newTransactions]);
+            showNotice(
+              isGu
+                ? `ClearSMS બેકઅપમાંથી ${result.newTransactions.length} વ્યવહારો સફળતાપૂર્વક ઉમેરાયા! (${result.duplicatesSkipped} ડુપ્લિકેટ્સ ફિલ્ટર થયા)`
+                : `Imported ${result.newTransactions.length} transactions from ClearSMS! (${result.duplicatesSkipped} duplicates skipped)`
+            );
+          } else if (result.success) {
+            alert(
+              isGu
+                ? `ClearSMS બેકઅપમાં કોઈ નવા ટ્રાન્ઝેક્શન મળ્યા નહીં (તમામ ${result.duplicatesSkipped} વ્યવહારો પહેલેથી મોજૂદ છે).`
+                : `No new transactions found in ClearSMS backup (${result.duplicatesSkipped} already exist).`
+            );
+          } else {
+            alert(result.errorMessage || 'Error importing ClearSMS backup');
+          }
         } else if (Array.isArray(parsed.transactions)) {
           // Backward compatibility with legacy plain JSON backup
           onRestoreTransactions(parsed.transactions);
@@ -714,6 +734,16 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           >
             <Layers className="w-4 h-4 text-indigo-700" />
             <span>{isGu ? 'Multiple Backup Merge (મર્જ)' : 'Multiple Backup Merge'}</span>
+          </button>
+
+          <button
+            type="button"
+            id="clearsms-import-btn"
+            onClick={() => restoreFileInputRef.current?.click()}
+            className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200 hover:bg-emerald-100 text-xs font-bold text-emerald-950 flex items-center justify-center gap-2 cursor-pointer transition shadow-xs active:scale-98 col-span-2"
+          >
+            <Database className="w-4 h-4 text-emerald-700" />
+            <span>{isGu ? 'ClearSMS Backup (.json) સીધું ઇમ્પોર્ટ કરો' : 'Import ClearSMS Backup (.json)'}</span>
           </button>
         </div>
 

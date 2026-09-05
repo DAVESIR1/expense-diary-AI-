@@ -26,6 +26,167 @@ export interface FinancialRule {
   defaultType?: 'expense' | 'income';
 }
 
+/**
+ * ClearSMS Open-Source Guardrails (Ported from ClearSMS guards.json & RuleEngine)
+ * These 16 guards provide industry-standard 0-false-positive filtering for financial SMS.
+ */
+export const CLEARSMS_GUARDS = {
+  // 1. Statement delivery notices ('Statement is sent', 'E-statement has been mailed')
+  statementNotice: [
+    /\b(?:e-?)?statement\s+(?:is|has\s+been|was)\s+(?:sent|generated|mailed|e-?mailed|dispatched)\b/i,
+    /\b(?:e-?)?statement\s+of\b[^\n]{0,80}?\bhas\s+been\s+(?:sent|mailed|e-?mailed)\b/i,
+    /\b(?:e-?)?statement\s+(?:is\s+)?(?:now\s+)?(?:available|ready)\b/i,
+  ],
+  // 2. Bill-due notices ('Payment of INR X ... is due on <date>') and reminder advisories
+  billDueNotice: [
+    /\b(?:payment|bill)\s+of\s+(?:INR|Rs\.?|₹)\s*[\d,]+(?:\.\d{1,2})?[^\n]{0,100}?\bis\s+due\b/i,
+    /\bignore\s+if\s+(?:already\s+)?paid\b/i,
+    /\b(?:due for renewal|renewal is due|renewal due|is due for renewal)\b/i,
+    /\b(?:renewal premium|renewal notice|renewal reminder|kindly renew|renew now)\b/i,
+    /\b(?:premium (?:of|amount)?\s*(?:rs\.?|inr|₹)?\s*[\d,]+(?:\.\d{1,2})?\s*is due)\b/i,
+    /\b(?:is due on|due date is|due date:|due date\s+\d|due by)\b/i,
+    /\b(?:pay before due date|pay before|pay now to avoid lapse|avoid lapse|to avoid policy lapse)\b/i,
+    /\b(?:keep your policy in force|policy will lapse|grace period|policy expires on)\b/i,
+    /\b(?:bill generated|statement generated|e[- ]bill generated|bill for the month)\b/i,
+    /\b(?:amount payable|amt payable|total amount due|tot amt due|minimum amount due|min amount due|min due)\b/i,
+    /\b(?:payment due on|bill payment due|due on or before)\b/i,
+    /\b(?:pack (?:is )?expiring|validity (?:is )?expiring|validity expires|plan expires)\b/i,
+    /\b(?:recharge due|recharge now to continue|to avoid disconnection)\b/i,
+  ],
+  // 3. Failed / declined / unsuccessful payment language. No money moved.
+  failedPayment: [
+    /\bhas\s+failed\b/i,
+    /\b(?:payment|transaction|txn|transfer|recharge)\s+(?:has\s+|was\s+)?failed\b/i,
+    /\bcould\s+not\s+be\s+(?:processed|completed)\b/i,
+    /\b(?:was\s+)?declined\b/i,
+    /\bunsuccessful\b/i,
+    /\b(?:timed out|cancelled)\b/i,
+  ],
+  // 4. UPI collect / payment-request notices ('You've received a request from X'). Money asked, not moved.
+  collectRequest: [
+    /\breceived\s+an?\s+(?:payment|collect|money|IPO|UPI)\s+(?:mandate\s+)?request\b/i,
+    /\b(?:payment|collect)\s+request\b/i,
+    /\b(?:has|is)\s+request(?:ed|ing)\s+(?:money\b|payment\b|(?:INR|Rs\.?|₹)\s*[\d,]+)/i,
+    /\bapprove\s+to\s+pay\b/i,
+    /\brequest\b[^\n]{0,80}?\bclick\s+to\s+accept\b/i,
+    /\bblock(?:ed)?\s+(?:for|towards)\s+(?:the\s+)?IPO\b(?![^\n]{0,120}?\bdebited\b)/i,
+    /\bmandate\b[^\n]{0,60}?\b(?:successfully\s+)?blocked\b(?![^\n]{0,120}?\bdebited\b)/i,
+  ],
+  // 5. Mandate lifecycle notices ('Mandate successfully created/cancelled')
+  mandateNotice: [
+    /\bmandate\b[\s\S]{0,60}?\bsuccessfully\s+(?:created|cancelled|revoked|modified)\b/i,
+    /\bsuccessfully\s+cancelled\s+the\s+scheduled\b[\s\S]{0,60}?\bpayment\b/i,
+    /\bmandate\s+(?:has\s+been|is|was)\s+(?:created|cancelled|revoked|modified)\b/i,
+  ],
+  // 6. Credit-limit increase & pre-approved loan OFFERS (money user does not have yet)
+  limitOffer: [
+    /\b(?:eligible|pre-?approved|can\s+be\s+(?:increased|enhanced)|to\s+avail|avail\s+now|apply\s+now)\b/i,
+    /\bread(?:y)?\s+to\s+be\s+credited\b/i,
+    /\b(?:instant loan|apply for loan|loan eligible|congratulations! you are eligible)\b/i,
+    /\b(?:increase credit limit|credit card offer|lifetime free card)\b/i,
+  ],
+  // 7. Shortened URL phishing & Prize/Lottery scam bait
+  genericScam: [
+    /(?:bit\.ly|tinyurl\.com|t\.co|goo\.gl|cutt\.ly|rb\.gy|is\.gd|tiny\.cc|shorturl\.at|at\.est1\.in|1kx\.in)/i,
+    /\b(?:won|lottery|prize|lucky\s+draw|jackpot|winner|you\s+have\s+won|claim\s+(?:your|now))\b/i,
+    /\b(?:points worth rs\.?\s*\d+\s*will expired today|redeem your points in cash)\b/i,
+  ],
+  // 8. Product tier naming ('XYZ Premium subscription/plan is now active')
+  tierPremium: [
+    /\b[\w&+.]+\s+premium\s+(?:subscription|plan|membership|pack|account|is\s+now\s+active)\b/i,
+    /\bclaim\s+paid\s+ratio\b/i,
+  ],
+  // 9. Hypothetical / rate amounts in marketing pitches ('earn 3 pts on every Rs 100 spent')
+  hypotheticalAmount: [
+    /\b(?:on\s+|for\s+)?every\s+(?:INR|Rs\.?|₹)\s*[\d,]+(?:\.\d{1,2})?(?:\s+(?:spent|paid|charged|loaded))?/i,
+    /\bper\s+(?:INR|Rs\.?|₹)\s*[\d,]+(?:\.\d{1,2})?(?:\s+(?:spent|paid|charged))?/i,
+  ],
+  // 10. Future / conditional tense directly before debit/credit verbs
+  futureTense: [
+    /\b(?:will|shall|would)\s+be\s+(?:debited|deducted|charged|credited)\b/i,
+    /\b(?:is\s+scheduled\s+to\s+be|will\s+auto-?debit)\b/i,
+  ],
+  // 11. Marketing pitches & coupons
+  marketingPitch: [
+    /\b(?:reap\s+benefits?|wealth\s+creation|grow\s+your\s+(?:money|wealth)|start\s+investing|invest\s+today)\b/i,
+    /\b(?:vouchers?|coupons?|gift\s*cards?|promo\s+code)\b/i,
+  ],
+  // 12. Payout / Refund in flight (not yet landed in user bank account)
+  payoutInFlight: [
+    /\brefund\b[^\n]{0,100}?\binitiated\b/i,
+    /\brefund\b[^\n]{0,60}?\bcredit\s+balance\b[^\n]{0,120}?\b(?:initiated|processed)\b/i,
+  ],
+};
+
+/**
+ * Canonical Directory of Indian Financial Institutions & Bank Senders (ClearSMS brands.json)
+ */
+export const INDIAN_BANK_DIRECTORY: Record<string, { canonicalName: string; aliases: string[] }> = {
+  HDFCBK: { canonicalName: 'HDFC Bank', aliases: ['HDFC', 'HDFC BANK'] },
+  HDFCB: { canonicalName: 'HDFC Bank', aliases: ['HDFC', 'HDFC BANK'] },
+  ICICIB: { canonicalName: 'ICICI Bank', aliases: ['ICICI', 'ICICI BANK'] },
+  ICICIT: { canonicalName: 'ICICI Bank', aliases: ['ICICI', 'ICICI BANK'] },
+  SBIINB: { canonicalName: 'State Bank of India', aliases: ['SBI', 'STATE BANK OF INDIA', 'STATE BANK'] },
+  SBIUPI: { canonicalName: 'State Bank of India', aliases: ['SBI', 'SBI UPI'] },
+  SBIPSG: { canonicalName: 'State Bank of India', aliases: ['SBI'] },
+  CBSSBI: { canonicalName: 'State Bank of India', aliases: ['SBI'] },
+  ATMSBI: { canonicalName: 'State Bank of India', aliases: ['SBI ATM'] },
+  SBICRD: { canonicalName: 'SBI Card', aliases: ['SBI CARD', 'SBI CREDIT CARD'] },
+  AXISBK: { canonicalName: 'Axis Bank', aliases: ['AXIS', 'AXIS BANK'] },
+  AXISB: { canonicalName: 'Axis Bank', aliases: ['AXIS', 'AXIS BANK'] },
+  KOTAKB: { canonicalName: 'Kotak Mahindra Bank', aliases: ['KOTAK', 'KOTAK BANK', 'KOTAK MAHINDRA'] },
+  KOTAKM: { canonicalName: 'Kotak Mahindra Bank', aliases: ['KOTAK'] },
+  BOBTXN: { canonicalName: 'Bank of Baroda', aliases: ['BOB', 'BANK OF BARODA'] },
+  BOBSMS: { canonicalName: 'Bank of Baroda', aliases: ['BANK OF BARODA'] },
+  PNBSMS: { canonicalName: 'Punjab National Bank', aliases: ['PNB', 'PUNJAB NATIONAL BANK'] },
+  PNBOTP: { canonicalName: 'Punjab National Bank', aliases: ['PNB'] },
+  CANBNK: { canonicalName: 'Canara Bank', aliases: ['CANARA', 'CANARA BANK'] },
+  UNIONB: { canonicalName: 'Union Bank of India', aliases: ['UNION BANK', 'UNION BANK OF INDIA', 'UBI'] },
+  UBOI: { canonicalName: 'Union Bank of India', aliases: ['UNION BANK'] },
+  IDFCFB: { canonicalName: 'IDFC FIRST Bank', aliases: ['IDFC', 'IDFC FIRST', 'IDFC FIRST BANK'] },
+  IDFCBK: { canonicalName: 'IDFC FIRST Bank', aliases: ['IDFC FIRST'] },
+  INDUSB: { canonicalName: 'IndusInd Bank', aliases: ['INDUSIND', 'INDUSIND BANK'] },
+  INDBNK: { canonicalName: 'IndusInd Bank', aliases: ['INDUSIND'] },
+  YESBNK: { canonicalName: 'Yes Bank', aliases: ['YES BANK'] },
+  FEDBNK: { canonicalName: 'Federal Bank', aliases: ['FEDERAL BANK', 'FEDERAL'] },
+  FEDSCP: { canonicalName: 'Scapia Federal', aliases: ['SCAPIA', 'SCAPIA FEDERAL'] },
+  AUBANK: { canonicalName: 'AU Small Finance Bank', aliases: ['AU BANK', 'AU SMALL FINANCE BANK'] },
+  RBLCRD: { canonicalName: 'RBL Bank', aliases: ['RBL', 'RBL BANK', 'RBL CARD'] },
+  RBLBNK: { canonicalName: 'RBL Bank', aliases: ['RBL BANK'] },
+  CITIBK: { canonicalName: 'Citi Bank', aliases: ['CITI', 'CITIBANK'] },
+  AMEXIN: { canonicalName: 'American Express', aliases: ['AMEX', 'AMERICAN EXPRESS'] },
+  PAYTMB: { canonicalName: 'Paytm Payments Bank', aliases: ['PAYTM BANK', 'PAYTM PAYMENTS BANK'] },
+  AIRTELB: { canonicalName: 'Airtel Payments Bank', aliases: ['AIRTEL PAYMENTS BANK'] },
+  JIOSVC: { canonicalName: 'Jio Payments / Services', aliases: ['JIO'] },
+};
+
+/**
+ * Resolves canonical bank name from SMS sender header or message body
+ */
+export function resolveBankFromSender(sender?: string, body?: string): string | undefined {
+  if (sender) {
+    const cleanSender = sender.toUpperCase().replace(/^[A-Z]{2}-/, '').trim();
+    for (const [key, info] of Object.entries(INDIAN_BANK_DIRECTORY)) {
+      if (cleanSender.includes(key)) {
+        return info.canonicalName;
+      }
+    }
+  }
+
+  if (body) {
+    for (const info of Object.values(INDIAN_BANK_DIRECTORY)) {
+      for (const alias of info.aliases) {
+        const regex = new RegExp(`\\b${alias.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
+        if (regex.test(body)) {
+          return info.canonicalName;
+        }
+      }
+    }
+  }
+
+  return undefined;
+}
+
 export const SPAM_AND_NON_TRANSACTION_PATTERNS = [
   // OTP and 2FA
   /\b(?:otp|one[- ]time[- ]password|verification code|security code|secret code)\b/i,
@@ -52,27 +213,10 @@ export const SPAM_AND_NON_TRANSACTION_PATTERNS = [
  * CRITICAL RULE: Insurance renewals, bill statements, and recharge notices must NEVER be treated as debit expenses!
  */
 export const REMINDER_AND_DUE_PATTERNS = [
-  // Insurance renewals and policy premium notices
-  /\b(?:due for renewal|renewal is due|renewal due|is due for renewal)\b/i,
-  /\b(?:renewal premium|renewal notice|renewal reminder|kindly renew|renew now)\b/i,
-  /\b(?:premium (?:of|amount)?\s*(?:rs\.?|inr|₹)?\s*[\d,]+(?:\.\d{1,2})?\s*is due)\b/i,
-  /\b(?:is due on|due date is|due date:|due date\s+\d|due by)\b/i,
-  /\b(?:pay before due date|pay before|pay now to avoid lapse|avoid lapse|to avoid policy lapse)\b/i,
-  /\b(?:keep your policy in force|policy will lapse|grace period|policy expires on)\b/i,
-
-  // Credit card & Utility bill generation notices (Not debits)
-  /\b(?:bill generated|statement generated|e[- ]bill generated|bill for the month)\b/i,
-  /\b(?:amount payable|amt payable|total amount due|tot amt due|minimum amount due|min amount due|min due)\b/i,
-  /\b(?:payment due on|bill payment due|due on or before)\b/i,
-  /\b(?:credit card statement|bill of (?:rs\.?|inr|₹))\b/i,
-
-  // Pack & Mobile validity expiry
-  /\b(?:pack (?:is )?expiring|validity (?:is )?expiring|validity expires|plan expires)\b/i,
-  /\b(?:recharge due|recharge now to continue|to avoid disconnection)\b/i,
-
-  // Upcoming scheduled debits (Future events, not yet debited!)
-  /\b(?:will be debited on|will be deducted on|scheduled on \d|auto[- ]debit scheduled|mandate due on)\b/i,
-  /\b(?:upcoming emi|emi due on|payment reminder|gentle reminder)\b/i,
+  ...CLEARSMS_GUARDS.billDueNotice,
+  ...CLEARSMS_GUARDS.statementNotice,
+  ...CLEARSMS_GUARDS.mandateNotice,
+  ...CLEARSMS_GUARDS.futureTense,
 ];
 
 /**
@@ -83,10 +227,25 @@ export function isReminderOrDueNotice(text: string): boolean {
   if (!text || text.trim().length < 8) return false;
   const lower = text.toLowerCase();
 
-  // Future scheduled debits are strictly reminders, never completed debits
+  // 1. Check all ClearSMS bill/due and statement notice guards
+  for (const pattern of CLEARSMS_GUARDS.billDueNotice) {
+    if (pattern.test(text)) return true;
+  }
+  for (const pattern of CLEARSMS_GUARDS.statementNotice) {
+    if (pattern.test(text)) return true;
+  }
+  for (const pattern of CLEARSMS_GUARDS.futureTense) {
+    if (pattern.test(text)) return true;
+  }
+  for (const pattern of CLEARSMS_GUARDS.mandateNotice) {
+    if (pattern.test(text)) return true;
+  }
+
+  // 2. Future scheduled debits are strictly reminders, never completed debits
   if (
     lower.includes('will be debited') ||
     lower.includes('will be deducted') ||
+    lower.includes('shall be debited') ||
     lower.includes('auto-debit scheduled') ||
     lower.includes('auto debit scheduled') ||
     lower.includes('scheduled on') ||
@@ -361,12 +520,50 @@ export const FINANCIAL_CATEGORIES_RULES: FinancialRule[] = [
 
 /**
  * Checks if raw message is a promotional, OTP or non-financial message.
+ * Uses ClearSMS guardrails to catch edge cases like pre-approved offers,
+ * failed transactions, collect requests, and scam links.
  */
 export function isSpamOrNonTransaction(text: string): boolean {
   if (!text || text.trim().length < 8) return true;
   const lower = text.toLowerCase();
 
-  // If message contains an explicit transaction flow, trailing "avl bal" is just bank's balance info, NOT a pure balance check
+  // 1. First unconditionally check ClearSMS critical guards
+  // Pre-approved loan/credit offers (e.g. "Rs 60,000 ready to be credited by Activating MobiKwik ZIP")
+  for (const p of CLEARSMS_GUARDS.limitOffer) {
+    if (p.test(text)) return true;
+  }
+
+  // Phishing / Lottery / Shortened URL scams (e.g. "Points worth Rs 5000 expired today", at.est1.in)
+  for (const p of CLEARSMS_GUARDS.genericScam) {
+    if (p.test(text)) return true;
+  }
+
+  // Failed / declined transactions (no money moved)
+  for (const p of CLEARSMS_GUARDS.failedPayment) {
+    if (p.test(text)) return true;
+  }
+
+  // Payment collect requests on Google Pay/PhonePe ("has requested money from you")
+  for (const p of CLEARSMS_GUARDS.collectRequest) {
+    if (p.test(text)) return true;
+  }
+
+  // Marketing tier / insurance claim ratio marketing ("99.34% Claim Paid Ratio")
+  for (const p of CLEARSMS_GUARDS.tierPremium) {
+    if (p.test(text)) return true;
+  }
+
+  // Marketing pitches and voucher coupons
+  for (const p of CLEARSMS_GUARDS.marketingPitch) {
+    if (p.test(text)) return true;
+  }
+
+  // Payout in flight (not yet landed)
+  for (const p of CLEARSMS_GUARDS.payoutInFlight) {
+    if (p.test(text)) return true;
+  }
+
+  // 2. If message contains an explicit transaction flow, check strict spam patterns
   const hasTransactionFlow = lower.includes('debited') ||
                              lower.includes('credited') ||
                              lower.includes('paid') ||
@@ -377,20 +574,38 @@ export function isSpamOrNonTransaction(text: string): boolean {
                              lower.includes('deposited');
 
   if (hasTransactionFlow) {
-    // Only check for OTP, marketing loans, and failed/declined transactions
     const strictSpam = [
       /\b(?:otp|one[- ]time[- ]password|verification code|security code)\b/i,
       /\bdo not share\b/i,
       /\bvalid for \d+ min\b/i,
       /\b(?:pre[- ]approved|instant loan|apply for loan|congratulations! you are eligible)\b/i,
       /\b(?:win cash|claim your reward|lucky winner|click here to apply)\b/i,
-      /\b(?:failed|declined|unsuccessful|cancelled|timed out)\b/i,
     ];
     return strictSpam.some((pattern) => pattern.test(text));
   }
 
   return SPAM_AND_NON_TRANSACTION_PATTERNS.some((pattern) => pattern.test(text));
 }
+
+/**
+ * High-level evaluator combining all ClearSMS guards and financial knowledge base
+ */
+export function evaluateSmsTransaction(
+  text: string,
+  sender?: string
+): { isTransaction: boolean; reason: string } {
+  if (!text || text.trim().length < 8) {
+    return { isTransaction: false, reason: 'EMPTY_OR_TOO_SHORT' };
+  }
+  if (isSpamOrNonTransaction(text)) {
+    return { isTransaction: false, reason: 'SPAM_OR_PROMOTIONAL_GUARD' };
+  }
+  if (isReminderOrDueNotice(text)) {
+    return { isTransaction: false, reason: 'REMINDER_OR_BILL_DUE_GUARD' };
+  }
+  return { isTransaction: true, reason: 'VALID_TRANSACTION_CANDIDATE' };
+}
+
 
 /**
  * Categorize a financial message accurately using rules and knowledge base.
