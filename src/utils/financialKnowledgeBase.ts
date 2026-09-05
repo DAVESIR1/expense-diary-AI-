@@ -47,6 +47,71 @@ export const SPAM_AND_NON_TRANSACTION_PATTERNS = [
   /\b(?:transaction reversed due to failure|insufficient balance|exceeded limit)\b/i,
 ];
 
+/**
+ * Strict Reminder, Due Date, Bill Generation & Renewal Notification Filter.
+ * CRITICAL RULE: Insurance renewals, bill statements, and recharge notices must NEVER be treated as debit expenses!
+ */
+export const REMINDER_AND_DUE_PATTERNS = [
+  // Insurance renewals and policy premium notices
+  /\b(?:due for renewal|renewal is due|renewal due|is due for renewal)\b/i,
+  /\b(?:renewal premium|renewal notice|renewal reminder|kindly renew|renew now)\b/i,
+  /\b(?:premium (?:of|amount)?\s*(?:rs\.?|inr|₹)?\s*[\d,]+(?:\.\d{1,2})?\s*is due)\b/i,
+  /\b(?:is due on|due date is|due date:|due date\s+\d|due by)\b/i,
+  /\b(?:pay before due date|pay before|pay now to avoid lapse|avoid lapse|to avoid policy lapse)\b/i,
+  /\b(?:keep your policy in force|policy will lapse|grace period|policy expires on)\b/i,
+
+  // Credit card & Utility bill generation notices (Not debits)
+  /\b(?:bill generated|statement generated|e[- ]bill generated|bill for the month)\b/i,
+  /\b(?:amount payable|amt payable|total amount due|tot amt due|minimum amount due|min amount due|min due)\b/i,
+  /\b(?:payment due on|bill payment due|due on or before)\b/i,
+  /\b(?:credit card statement|bill of (?:rs\.?|inr|₹))\b/i,
+
+  // Pack & Mobile validity expiry
+  /\b(?:pack (?:is )?expiring|validity (?:is )?expiring|validity expires|plan expires)\b/i,
+  /\b(?:recharge due|recharge now to continue|to avoid disconnection)\b/i,
+
+  // Upcoming scheduled debits (Future events, not yet debited!)
+  /\b(?:will be debited on|will be deducted on|scheduled on \d|auto[- ]debit scheduled|mandate due on)\b/i,
+  /\b(?:upcoming emi|emi due on|payment reminder|gentle reminder)\b/i,
+];
+
+/**
+ * Checks if the text represents a reminder, renewal alert, bill due notice or future schedule.
+ * Returns true only if there is NO explicit past-tense debit confirmation.
+ */
+export function isReminderOrDueNotice(text: string): boolean {
+  if (!text || text.trim().length < 8) return false;
+  const lower = text.toLowerCase();
+
+  // Future scheduled debits are strictly reminders, never completed debits
+  if (
+    lower.includes('will be debited') ||
+    lower.includes('will be deducted') ||
+    lower.includes('auto-debit scheduled') ||
+    lower.includes('auto debit scheduled') ||
+    lower.includes('scheduled on') ||
+    lower.includes('upcoming emi') ||
+    lower.includes('upcoming mandate') ||
+    lower.includes('upcoming debit')
+  ) {
+    return true;
+  }
+
+  // If message explicitly confirms completed debit without future conditions
+  const completedDebitProof = [
+    /\b(?:has been debited|was debited|successfully debited|debited by|debited for|debited towards|debited from)\b/i,
+    /\b(?:paid rs\.?|paid inr|paid ₹|paid to|paid successfully|successfully paid|payment of rs.*?successful|txn successful)\b/i,
+    /\b(?:spent on your card|charged on your card|withdrawn from)\b/i,
+    /\b(?:txn of rs.*?debited|txn of inr.*?debited|txn of ₹.*?debited|debited from card)\b/i,
+    /\b(?:upi\/dr\/|vpa .*?debited)\b/i,
+  ];
+  if (completedDebitProof.some((p) => p.test(lower))) {
+    return false;
+  }
+
+  return REMINDER_AND_DUE_PATTERNS.some((p) => p.test(lower));
+}
+
 export const INVESTMENT_PATTERNS = {
   nps: [
     /\bnps\b/i,
@@ -252,7 +317,22 @@ export const FINANCIAL_CATEGORIES_RULES: FinancialRule[] = [
     defaultType: 'expense',
   },
 
-  // 11. ENTERTAINMENT & OTT
+  // 11. INSURANCE (LIC, Star Health, HDFC Life, ICICI Lombard, etc.) -> FOR COMPLETED PAYMENTS
+  {
+    id: 'rule-insurance',
+    category: 'Insurance',
+    categoryGu: 'વીમો અને પ્રીમિયમ',
+    keywords: [
+      'lic of india', 'lic premium', 'life insurance', 'health insurance', 'star health',
+      'hdfc life', 'icici prudential', 'icici lombard', 'sbi life', 'max life', 'tata aia',
+      'bajaj allianz', 'care health', 'niva bupa', 'policybazaar', 'motor insurance',
+      'general insurance', 'insurance premium', 'policy premium'
+    ],
+    senderPatterns: ['LICIND', 'STARHL', 'HDFCLI', 'ICICIP', 'ICICIL', 'SBILIF', 'MAXLIF', 'TATAAI', 'BAJAJA', 'CAREHL', 'POLBAZ'],
+    defaultType: 'expense',
+  },
+
+  // 12. ENTERTAINMENT & OTT
   {
     id: 'rule-entertainment',
     category: 'Entertainment',
@@ -265,7 +345,7 @@ export const FINANCIAL_CATEGORIES_RULES: FinancialRule[] = [
     defaultType: 'expense',
   },
 
-  // 12. LOANS & EMI
+  // 13. LOANS & EMI
   {
     id: 'rule-loans',
     category: 'Bills & Utilities',
@@ -284,6 +364,31 @@ export const FINANCIAL_CATEGORIES_RULES: FinancialRule[] = [
  */
 export function isSpamOrNonTransaction(text: string): boolean {
   if (!text || text.trim().length < 8) return true;
+  const lower = text.toLowerCase();
+
+  // If message contains an explicit transaction flow, trailing "avl bal" is just bank's balance info, NOT a pure balance check
+  const hasTransactionFlow = lower.includes('debited') ||
+                             lower.includes('credited') ||
+                             lower.includes('paid') ||
+                             lower.includes('spent') ||
+                             lower.includes('sent') ||
+                             lower.includes('transferred') ||
+                             lower.includes('withdrawn') ||
+                             lower.includes('deposited');
+
+  if (hasTransactionFlow) {
+    // Only check for OTP, marketing loans, and failed/declined transactions
+    const strictSpam = [
+      /\b(?:otp|one[- ]time[- ]password|verification code|security code)\b/i,
+      /\bdo not share\b/i,
+      /\bvalid for \d+ min\b/i,
+      /\b(?:pre[- ]approved|instant loan|apply for loan|congratulations! you are eligible)\b/i,
+      /\b(?:win cash|claim your reward|lucky winner|click here to apply)\b/i,
+      /\b(?:failed|declined|unsuccessful|cancelled|timed out)\b/i,
+    ];
+    return strictSpam.some((pattern) => pattern.test(text));
+  }
+
   return SPAM_AND_NON_TRANSACTION_PATTERNS.some((pattern) => pattern.test(text));
 }
 
@@ -372,6 +477,24 @@ export function categorizeFinancialText(
         needsReview: false,
       };
     }
+  }
+
+  // Special Priority 4: Insurance Check (LIC, Star Health, HDFC Life, etc.)
+  const insuranceKeywords = [
+    'lic of india', 'lic premium', 'star health', 'hdfc life', 'icici prudential',
+    'icici lombard', 'sbi life', 'max life', 'tata aia', 'bajaj allianz',
+    'care health', 'niva bupa', 'policybazaar', 'motor insurance', 'general insurance',
+    'insurance'
+  ];
+  if (insuranceKeywords.some((kw) => clean.includes(kw)) || ['LIC', 'STARHL', 'HDFCLI', 'ICICIL', 'SBILIF', 'MAXLIF', 'POLBAZ'].some((sp) => upperSender.includes(sp))) {
+    return {
+      category: 'Insurance',
+      categoryGu: 'વીમો અને પ્રીમિયમ',
+      confidence: 0.96,
+      isInvestment: false,
+      isTransfer: false,
+      needsReview: false,
+    };
   }
 
   // Check Rules Database

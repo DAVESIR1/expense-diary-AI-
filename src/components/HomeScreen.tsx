@@ -117,9 +117,34 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
     return true; // 'all'
   });
 
-  // Calculate totals strictly based on selected period
+  // Helper to match category filter
+  const matchesCategoryFilter = (item: Transaction, filter: string) => {
+    if (filter === 'all') return true;
+    const c = item.category.toLowerCase();
+    if (filter === 'investment') {
+      return c.includes('investment') || c.includes('રોકાણ') || c.includes('nps') || c.includes('sip') || c.includes('mutual');
+    }
+    if (filter === 'shopping') {
+      return c.includes('shopping') || c.includes('ખરીદી');
+    }
+    if (filter === 'bills') {
+      return c.includes('bill') || c.includes('બિલ') || c.includes('utilit') || c.includes('recharge') || c.includes('fastag') || c.includes('insurance') || c.includes('વીમો');
+    }
+    if (filter === 'transfer') {
+      return c.includes('transfer') || c.includes('ટ્રાન્સફર') || item.paymentMode === 'UPI';
+    }
+    if (filter === 'offline') {
+      return item.paymentMode === 'Cash' || item.paymentMode === 'ATM / Cash' || c.includes('other');
+    }
+    return true;
+  };
+
+  // Transactions matching active category filter within the selected time period
+  const categoryPeriodTransactions = periodTransactions.filter((tx) => matchesCategoryFilter(tx, categoryFilter));
+
+  // Calculate totals dynamically based on selected period AND active category filter (Requirement 4)
   // CRITICAL REQUIREMENT: Investments (NPS, SIP, etc.) are NOT income!
-  const totalIncome = periodTransactions
+  const totalIncome = categoryPeriodTransactions
     .filter((tx) => {
       if (tx.type !== 'income') return false;
       const lowerCat = tx.category.toLowerCase();
@@ -131,12 +156,12 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
     })
     .reduce((sum, item) => sum + item.amount, 0);
 
-  const totalExpense = periodTransactions
+  const totalExpense = categoryPeriodTransactions
     .filter((tx) => tx.type === 'expense')
     .reduce((sum, item) => sum + item.amount, 0);
 
-  // Total investment tracked in selected period
-  const totalInvestment = periodTransactions
+  // Total investment tracked in selected period & category
+  const totalInvestment = categoryPeriodTransactions
     .filter((tx) => {
       const lowerCat = tx.category.toLowerCase();
       return lowerCat.includes('investment') || lowerCat.includes('રોકાણ') || lowerCat.includes('nps') || lowerCat.includes('sip');
@@ -146,35 +171,9 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
   const netBalance = totalIncome - totalExpense;
 
   // Filter transactions for list (combines period + search + income/expense filter + category tabs)
-  const filteredTransactions = periodTransactions.filter((item) => {
+  const filteredTransactions = categoryPeriodTransactions.filter((item) => {
     if (selectedFilterType !== 'all' && item.type !== selectedFilterType) {
       return false;
-    }
-
-    if (categoryFilter === 'investment') {
-      const c = item.category.toLowerCase();
-      if (!c.includes('investment') && !c.includes('રોકાણ') && !c.includes('nps') && !c.includes('sip') && !c.includes('mutual')) {
-        return false;
-      }
-    } else if (categoryFilter === 'shopping') {
-      const c = item.category.toLowerCase();
-      if (!c.includes('shopping') && !c.includes('ખરીદી')) {
-        return false;
-      }
-    } else if (categoryFilter === 'bills') {
-      const c = item.category.toLowerCase();
-      if (!c.includes('bill') && !c.includes('બિલ') && !c.includes('utilit') && !c.includes('recharge') && !c.includes('fastag')) {
-        return false;
-      }
-    } else if (categoryFilter === 'transfer') {
-      const c = item.category.toLowerCase();
-      if (!c.includes('transfer') && !c.includes('ટ્રાન્સફર') && item.paymentMode !== 'UPI') {
-        return false;
-      }
-    } else if (categoryFilter === 'offline') {
-      if (item.paymentMode !== 'Cash' && item.paymentMode !== 'ATM / Cash' && !item.category.toLowerCase().includes('other')) {
-        return false;
-      }
     }
 
     if (searchQuery.trim()) {
@@ -634,8 +633,17 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
         >
           <div className="flex items-start justify-between">
             <div>
-              <p className="text-[#2D6A4F] text-sm sm:text-base font-bold tracking-tight mb-1">
-                {t.income}
+              <p className="text-[#2D6A4F] text-sm sm:text-base font-bold tracking-tight mb-1 flex items-center gap-1.5">
+                <span>{t.income}</span>
+                {categoryFilter !== 'all' && (
+                  <span className="text-[10px] bg-[#D1F7D9] text-[#1B4332] px-2 py-0.5 rounded-full font-bold">
+                    {categoryFilter === 'investment' ? (isGu ? 'રોકાણ' : 'Investment') :
+                     categoryFilter === 'shopping' ? (isGu ? 'શોપિંગ' : 'Shopping') :
+                     categoryFilter === 'bills' ? (isGu ? 'બિલ' : 'Bills') :
+                     categoryFilter === 'transfer' ? (isGu ? 'ટ્રાન્સફર' : 'Transfer') :
+                     categoryFilter === 'offline' ? (isGu ? 'રોકડ' : 'Cash') : categoryFilter}
+                  </span>
+                )}
               </p>
               <h1
                 id="home-total-income-value"
@@ -659,7 +667,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
           <div className="flex items-center gap-2 text-[#40916C] text-xs font-semibold mt-3">
             <ArrowDownLeft className="w-4 h-4 stroke-[2.5]" />
             <span>
-              {periodTransactions.filter((x) => x.type === 'income').length} {t.income}
+              {categoryPeriodTransactions.filter((x) => x.type === 'income').length} {t.income}
             </span>
           </div>
         </div>
@@ -671,8 +679,17 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
         >
           <div className="flex items-start justify-between">
             <div>
-              <p className="text-[#C53030] text-sm sm:text-base font-bold tracking-tight mb-1">
-                {t.expense}
+              <p className="text-[#C53030] text-sm sm:text-base font-bold tracking-tight mb-1 flex items-center gap-1.5">
+                <span>{t.expense}</span>
+                {categoryFilter !== 'all' && (
+                  <span className="text-[10px] bg-[#FEE2E2] text-[#742A2A] px-2 py-0.5 rounded-full font-bold">
+                    {categoryFilter === 'investment' ? (isGu ? 'રોકાણ' : 'Investment') :
+                     categoryFilter === 'shopping' ? (isGu ? 'શોપિંગ' : 'Shopping') :
+                     categoryFilter === 'bills' ? (isGu ? 'બિલ' : 'Bills') :
+                     categoryFilter === 'transfer' ? (isGu ? 'ટ્રાન્સફર' : 'Transfer') :
+                     categoryFilter === 'offline' ? (isGu ? 'રોકડ' : 'Cash') : categoryFilter}
+                  </span>
+                )}
               </p>
               <h1
                 id="home-total-expense-value"
@@ -696,7 +713,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
           <div className="flex items-center gap-2 text-[#C53030] text-xs font-semibold mt-3">
             <ArrowUpRight className="w-4 h-4 stroke-[2.5]" />
             <span>
-              {periodTransactions.filter((x) => x.type === 'expense').length} {t.expense}
+              {categoryPeriodTransactions.filter((x) => x.type === 'expense').length} {t.expense}
             </span>
           </div>
         </div>

@@ -8,6 +8,7 @@ export const DEFAULT_CATEGORIES: Category[] = [
   { id: 'cat-travel', name: 'Travel & Fuel', nameGu: 'મુસાફરી અને પેટ્રોલ', icon: 'Car', type: 'expense', color: '#0891B2' },
   { id: 'cat-health', name: 'Health & Medicines', nameGu: 'દવાઓ અને આરોગ્ય', icon: 'HeartPulse', type: 'expense', color: '#DC2626' },
   { id: 'cat-entertainment', name: 'Entertainment', nameGu: 'મનોરંજન અને OTT', icon: 'Tv', type: 'expense', color: '#9333EA' },
+  { id: 'cat-insurance', name: 'Insurance', nameGu: 'વીમો અને પ્રીમિયમ', icon: 'Shield', type: 'expense', color: '#0891B2' },
   { id: 'cat-salary', name: 'Salary', nameGu: 'પગાર (Salary)', icon: 'Briefcase', type: 'income', color: '#059669' },
   { id: 'cat-business', name: 'Business & Freelance', nameGu: 'વેપાર અને ફ્રીલાન્સ', icon: 'TrendingUp', type: 'income', color: '#0D9488' },
   { id: 'cat-investment-outflow', name: 'Investment', nameGu: 'રોકાણ (NPS/SIP)', icon: 'PiggyBank', type: 'expense', color: '#4F46E5' },

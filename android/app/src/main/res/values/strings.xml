@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">smart expence income</string>
+    <string name="title_activity_main">smart expence income</string>
+    <string name="package_name">com.expensediary.ai</string>
+    <string name="custom_url_scheme">com.expensediary.ai</string>
+</resources>

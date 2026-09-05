@@ -1,5 +1,10 @@
 import { TransactionType, Category } from '../types';
-import { isSpamOrNonTransaction, categorizeFinancialText, INVESTMENT_PATTERNS } from './financialKnowledgeBase';
+import {
+  isSpamOrNonTransaction,
+  isReminderOrDueNotice,
+  categorizeFinancialText,
+  INVESTMENT_PATTERNS
+} from './financialKnowledgeBase';
 
 export interface ParsedExpenseMessage {
   type: TransactionType;
@@ -96,6 +101,17 @@ export function extractBankOrSource(sender?: string, body?: string): string | un
   if (cleanSender.includes('GROWW') || cleanBody.includes('GROWW')) return 'Groww';
   if (cleanSender.includes('ANGEL') || cleanBody.includes('ANGEL ONE')) return 'Angel One';
 
+  // Insurance companies
+  if (cleanSender.includes('LIC') || cleanBody.includes('LIC OF INDIA') || cleanBody.includes('LICIND')) return 'LIC of India';
+  if (cleanSender.includes('STARHL') || cleanBody.includes('STAR HEALTH')) return 'Star Health';
+  if (cleanSender.includes('HDFCLI') || cleanBody.includes('HDFC LIFE')) return 'HDFC Life';
+  if (cleanSender.includes('ICICIP') || cleanBody.includes('ICICI PRUDENTIAL')) return 'ICICI Prudential';
+  if (cleanSender.includes('ICICIL') || cleanBody.includes('ICICI LOMBARD')) return 'ICICI Lombard';
+  if (cleanSender.includes('SBILIF') || cleanBody.includes('SBI LIFE')) return 'SBI Life';
+  if (cleanSender.includes('MAXLIF') || cleanBody.includes('MAX LIFE')) return 'Max Life';
+  if (cleanSender.includes('POLBAZ') || cleanBody.includes('POLICYBAZAAR')) return 'PolicyBazaar';
+
+  // Banks
   if (cleanSender.includes('HDFC') || cleanBody.includes('HDFC BANK')) return 'HDFC Bank';
   if (cleanSender.includes('SBI') || cleanBody.includes('STATE BANK OF INDIA') || cleanBody.includes('SBI')) return 'SBI';
   if (cleanSender.includes('ICICI') || cleanBody.includes('ICICI BANK')) return 'ICICI Bank';
@@ -138,44 +154,67 @@ export function parseTransactionMessage(
     return null;
   }
 
-  // 2. Extract Amount first to ensure it's a monetary message
-  // Matches: Rs. 500, Rs 500.00, INR 1,200.50, ₹450, $25.00, 500.00 INR
-  const amountRegex = /(?:rs\.?|inr|₹|\$|€|£)\s*([\d,]+(?:\.\d{1,2})?)|([\d,]+(?:\.\d{1,2})?)\s*(?:rs\.?|inr)/i;
-  const matchAmount = clean.match(amountRegex);
+  // 2. Strict Reminder, Bill Notice, Recharge & Insurance Renewal Filter (CRITICAL)
+  // Insurance renewals, bill statements, and recharge reminders must NEVER be added as expenses!
+  if (isReminderOrDueNotice(clean)) {
+    return null;
+  }
 
+  // 3. Extract Amount
+  // Supports:
+  // a) Currency prefix/suffix: Rs. 500, Rs 500.00, INR 1,200.50, ₹450, 500.00 INR
+  // b) Action keyword: "debited by 250.0", "credited by 500", "paid 150 to" (No adjacent currency)
   let amount = 0;
-  if (matchAmount) {
-    const rawAmt = matchAmount[1] || matchAmount[2];
+
+  const currencyAmountMatch = clean.match(/(?:rs\.?|inr|₹|\$|€|£)\s*([\d,]+(?:\.\d{1,2})?)|([\d,]+(?:\.\d{1,2})?)\s*(?:rs\.?|inr)/i);
+  if (currencyAmountMatch) {
+    const rawAmt = currencyAmountMatch[1] || currencyAmountMatch[2];
     amount = parseFloat(rawAmt.replace(/,/g, ''));
+  }
+
+  if (!amount || isNaN(amount) || amount <= 0) {
+    const actionAmountMatch = clean.match(/(?:debited|credited|paid|spent|sent|received|transferred|withdrawn)\s+(?:by|for|of|with|sum of)?\s*(?:rs\.?|inr|₹)?\s*([\d,]+(?:\.\d{1,2})?)/i);
+    if (actionAmountMatch && actionAmountMatch[1]) {
+      amount = parseFloat(actionAmountMatch[1].replace(/,/g, ''));
+    }
+  }
+
+  if (!amount || isNaN(amount) || amount <= 0) {
+    const txnAmountMatch = clean.match(/(?:txn of|txn)\s*(?:rs\.?|inr|₹)?\s*([\d,]+(?:\.\d{1,2})?)/i);
+    if (txnAmountMatch && txnAmountMatch[1]) {
+      amount = parseFloat(txnAmountMatch[1].replace(/,/g, ''));
+    }
   }
 
   if (!amount || isNaN(amount) || amount <= 0) {
     return null;
   }
 
-  // 3. Determine Flow Type (Debit / Credit)
+  // 4. Determine Flow Type (Debit / Credit)
   const debitPatterns = [
     /\bdebited\b/i,
     /\bpaid\b/i,
     /\bspent\b/i,
-    /\bsent to\b/i,
-    /\btransferred to\b/i,
-    /\bpurchase of\b/i,
+    /\bsent\b/i,
+    /\btransferred\b/i,
+    /\bpurchase\b/i,
     /\bwithdrawn\b/i,
     /\bcharged\b/i,
     /\bdr\b/i,
-    /\bpayment of\b/i,
-    /\btxn of\b/i,
+    /\bpayment\b/i,
+    /\btxn\b/i,
+    /\bupi\/dr\b/i,
   ];
 
   const creditPatterns = [
     /\bcredited\b/i,
-    /\breceived from\b/i,
-    /\brefund of\b/i,
+    /\breceived\b/i,
+    /\brefund\b/i,
     /\bdeposited\b/i,
     /\bsalary credited\b/i,
     /\bcr\b/i,
     /\bmoney received\b/i,
+    /\bupi\/cr\b/i,
   ];
 
   let rawType: TransactionType | null = null;
@@ -200,7 +239,7 @@ export function parseTransactionMessage(
     return null;
   }
 
-  // 4. Extract Payment Mode (UPI, Card, NetBanking, ATM)
+  // 5. Extract Payment Mode (UPI, Card, NetBanking, ATM)
   let paymentMode = 'UPI';
   if (/upi|gpay|phonepe|paytm|bhim|vpa/i.test(lower)) {
     paymentMode = 'UPI';
@@ -212,7 +251,7 @@ export function parseTransactionMessage(
     paymentMode = 'Bank Transfer';
   }
 
-  // 5. Extract Merchant / Vendor / Recipient
+  // 6. Extract Merchant / Vendor / Recipient
   let vendorOrPerson = '';
   // Match "to [Merchant]", "at [Merchant]", "towards [Merchant]", "from [Sender]"
   const merchantMatch = clean.match(
@@ -225,21 +264,21 @@ export function parseTransactionMessage(
     }
   }
 
-  // 6. Extract Reference / UTR Number
+  // 7. Extract Reference / UTR Number
   let referenceNumber: string | undefined;
   const refMatch = clean.match(/(?:ref|utr|txn|rrn|txn id|ref no|pran)[\s.:#]*([A-Za-z0-9]{6,16})/i);
   if (refMatch && refMatch[1]) {
     referenceNumber = refMatch[1];
   }
 
-  // 7. Extract Account Information (e.g. A/c XX1234 or Card ending 5678)
+  // 8. Extract Account Information (e.g. A/c XX1234 or Card ending 5678)
   let accountInfo: string | undefined;
   const accMatch = clean.match(/(?:a\/c|account|card)[\s*xX-]*(\d{4})/i);
   if (accMatch && accMatch[1]) {
     accountInfo = `A/c *${accMatch[1]}`;
   }
 
-  // 8. Categorization via Comprehensive Financial Knowledge Base
+  // 9. Categorization via Comprehensive Financial Knowledge Base
   const categoryResult = categorizeFinancialText(clean, options?.sender, type);
   let category = categoryResult.category;
 
@@ -249,10 +288,12 @@ export function parseTransactionMessage(
     if (exact) category = exact.name;
   }
 
-  // 9. Descriptive Title
+  // 10. Descriptive Title
   let title = vendorOrPerson ? vendorOrPerson : type === 'income' ? 'Income Received' : 'Expense Payment';
   if (isNpsContribution) {
     title = 'NPS Contribution (રોકાણ)';
+  } else if (category === 'Insurance') {
+    title = vendorOrPerson ? `Insurance: ${vendorOrPerson}` : 'Insurance Premium (વીમો)';
   } else if (category === 'Transfer') {
     title = vendorOrPerson ? `UPI: ${vendorOrPerson}` : 'UPI Transfer';
   }
