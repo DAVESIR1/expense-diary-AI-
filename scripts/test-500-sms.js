@@ -268,6 +268,8 @@ console.log(`✓ Tested ${transferCount} UPI P2P transfers (All 100% Category Tr
 const salaryMessages = [
   'Your A/c XX1234 is credited with Rs. 55,000.00 on 01-Sep-24 towards Monthly Salary. Bal Rs 75,000.',
   'Salary credited: INR 65,000.00 deposited into A/c XX5678 on 31-Aug by ABC TECHNOLOGIES PVT LTD.',
+  'Your A/C XXXXX402807 has credit for BY SALARY of Rs 57,973.00 on 02/09/26. Avl Bal Rs 1,17,037.52.-SBI',
+  'Dear Customer, INR 780.00 credited to your A/c No XX2807 on 18/08/2026 through NEFT with UTR HDFCH01202283380 by DIST INST OF EDU AND TRAINING CENTER, INFO: BATCHID:0031 0001 SALARY-SBI',
   'Sal Cr: Rs. 48,500.00 credited to account XX9012 on 01-Sep. Available balance Rs 52,000.',
   'Payroll credit: Rs. 72,000 deposited in your bank A/c XX4321 on 01-Sep-2026. UTR 42569988.',
   'Monthly stipend of Rs. 25,000 credited to A/c XX6789 on 01-Sep. Ref 42567711.'

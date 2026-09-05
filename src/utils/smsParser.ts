@@ -241,6 +241,12 @@ export function parseTransactionMessage(
 
   const creditKeywords = [
     /\bcredited\b/i,
+    /\bhas\s+credit\s+(?:for|of|with)?\b/i,
+    /\bcredit\s+(?:for|of)\b/i,
+    /\bby\s+salary\b/i,
+    /\bsalary\s+(?:credit(?:ed)?|deposit(?:ed)?)\b/i,
+    /\bcredited\s+with\s+salary\b/i,
+    /\bsalary-sbi\b/i,
     /\breceived\b/i,
     /\brefund(?:ed)?\b/i,
     /\bdeposited\b/i,
@@ -313,7 +319,7 @@ export function parseTransactionMessage(
   }
 
   // 6. Extract Payment Mode (UPI, Card, NetBanking, ATM)
-  let paymentMode = 'UPI';
+  let paymentMode = 'Bank Transfer';
   if (/upi|gpay|phonepe|paytm|bhim|vpa/i.test(lower)) {
     paymentMode = 'UPI';
   } else if (/credit card|debit card|visa|mastercard|rupay|card ending|card no/i.test(lower)) {
@@ -322,6 +328,8 @@ export function parseTransactionMessage(
     paymentMode = 'ATM / Cash';
   } else if (/net banking|neft|rtgs|imps|fund transfer/i.test(lower)) {
     paymentMode = 'Bank Transfer';
+  } else if (/salary|payroll|by salary/i.test(lower)) {
+    paymentMode = 'Direct Transfer';
   }
 
   // 7. ClearSMS Smart Merchant Extraction & Normalization
@@ -381,6 +389,21 @@ export function parseTransactionMessage(
     }
   }
 
+  // 7d. Employer extraction for NEFT/Payroll/Salary credits (e.g. by DIST INST OF EDU AND TRAINING CENTER)
+  if (!vendorOrPerson) {
+    const byEmployerMatch = clean.match(/\bby\s+([A-Za-z][A-Za-z0-9\s&.-]{3,60}?)(?:,\s*INFO:|\.\s*INFO:|\s+with\s+UTR|\s+UTR|\.|$)/i);
+    if (byEmployerMatch && byEmployerMatch[1]) {
+      const emp = byEmployerMatch[1].trim();
+      if (!/^(the|a|an|your|ur|cheque|cash|transfer|imps|neft|upi)\b/i.test(emp)) {
+        vendorOrPerson = emp;
+      }
+    }
+  }
+
+  if (!vendorOrPerson && /\bby\s+salary\b/i.test(clean)) {
+    vendorOrPerson = 'Salary (પગાર)';
+  }
+
   // 8. Extract Reference / UTR Number
   let referenceNumber: string | undefined;
   const refMatch = clean.match(/(?:ref|utr|txn|rrn|txn id|ref no|upi ref|pran)[\s.:#]*([A-Za-z0-9]{6,22})/i);
@@ -390,9 +413,11 @@ export function parseTransactionMessage(
 
   // 9. Extract Account Information (e.g. A/c XX1234 or Card ending 5678)
   let accountInfo: string | undefined;
-  const accMatch = clean.match(/(?:a\/c|a\\c|acct|account|card)\s*(?:no\.?|number)?\s*(?:ending\s*)?(?:in\s+|with\s+)?[Xx*]*(\d{3,4})(?!\d)/i);
+  const accMatch = clean.match(/(?:a\/c|a\\c|acct|account|card)\s*(?:no\.?|number)?\s*(?:ending\s*)?(?:in\s+|with\s+)?[Xx*]*(\d{3,6})(?!\d)/i);
   if (accMatch && accMatch[1]) {
-    accountInfo = `A/c *${accMatch[1]}`;
+    // If tail has 5-6 digits like 402807, take last 4 digits for clean display
+    const tail = accMatch[1].length > 4 ? accMatch[1].slice(-4) : accMatch[1];
+    accountInfo = `A/c *${tail}`;
   } else {
     const cardTailMatch = clean.match(/(?:card\s+no\.?\s*|ending\s+)[Xx*]*(\d{4})/i);
     if (cardTailMatch && cardTailMatch[1]) {
@@ -417,6 +442,8 @@ export function parseTransactionMessage(
   let title = vendorOrPerson ? vendorOrPerson : type === 'income' ? 'Income Received' : 'Expense Payment';
   if (isNpsContribution) {
     title = 'NPS Contribution (રોકાણ)';
+  } else if (category === 'Salary') {
+    title = vendorOrPerson && vendorOrPerson !== 'Salary (પગાર)' ? `Salary: ${vendorOrPerson}` : 'Salary Credit (પગાર જમા)';
   } else if (category === 'Insurance') {
     title = vendorOrPerson ? `Insurance: ${vendorOrPerson}` : 'Insurance Premium (વીમો)';
   } else if (category === 'Transfer') {

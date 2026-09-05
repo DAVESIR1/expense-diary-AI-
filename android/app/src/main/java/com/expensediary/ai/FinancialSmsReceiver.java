@@ -130,12 +130,18 @@ public class FinancialSmsReceiver extends BroadcastReceiver {
         // Financial keywords
         boolean hasFinancialAction = lower.contains("debited") ||
                                      lower.contains("credited") ||
+                                     lower.contains("credit") ||
+                                     lower.contains("salary") ||
+                                     lower.contains("payroll") ||
+                                     lower.contains("stipend") ||
+                                     lower.contains("deposited") ||
                                      lower.contains("paid") ||
                                      lower.contains("spent") ||
                                      lower.contains("sent") ||
                                      lower.contains("received") ||
                                      lower.contains("transferred") ||
                                      lower.contains("withdrawn") ||
+                                     lower.contains("refund") ||
                                      lower.contains("txn of") ||
                                      lower.contains("nps") ||
                                      lower.contains("pran") ||
@@ -146,9 +152,10 @@ public class FinancialSmsReceiver extends BroadcastReceiver {
         boolean hasCurrency = body.contains("₹") ||
                               lower.contains("rs.") ||
                               lower.contains("rs ") ||
+                              lower.contains("rs:") ||
                               lower.contains("inr") ||
                               body.contains("$");
 
-        return hasFinancialAction && (hasCurrency || lower.contains("nps") || lower.contains("upi"));
+        return hasFinancialAction && (hasCurrency || lower.contains("nps") || lower.contains("upi") || lower.contains("salary"));
     }
 }

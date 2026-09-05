@@ -78,10 +78,15 @@ public class FinancialNotificationListener extends NotificationListenerService {
 
         boolean hasFinancialKeywords = lowerText.contains("rs.") ||
                                        lowerText.contains("rs ") ||
+                                       lowerText.contains("rs:") ||
                                        lowerText.contains("₹") ||
                                        lowerText.contains("inr") ||
                                        lowerText.contains("debited") ||
                                        lowerText.contains("credited") ||
+                                       lowerText.contains("credit") ||
+                                       lowerText.contains("salary") ||
+                                       lowerText.contains("payroll") ||
+                                       lowerText.contains("deposited") ||
                                        lowerText.contains("paid") ||
                                        lowerText.contains("sent") ||
                                        lowerText.contains("spent") ||

@@ -45,6 +45,16 @@ for (const [cat, cnt] of Object.entries(categoryCounts).sort((a, b) => b[1] - a[
   console.log(`   - ${cat.padEnd(20)}: ${cnt.toString().padStart(5)}`);
 }
 
+// Dedicated Salary Check
+const salaryTxns = result.newTransactions.filter(t => t.category === 'Salary');
+console.log('\n💼 Salary Detection Verification:');
+console.log(`   - Total Salary Transactions Extracted: ${salaryTxns.length}`);
+console.log(`   - Total Salary Income Amount: ₹${salaryTxns.reduce((sum, t) => sum + t.amount, 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`);
+console.log('   - Recent Salary Transactions:');
+salaryTxns.slice(-5).forEach(t => {
+  console.log(`     • [${t.date}] ₹${t.amount.toLocaleString('en-IN')} - ${t.title} (${t.notes || 'A/c'})`);
+});
+
 console.log('\n=============================================================');
 console.log('🎉 BENCHMARK COMPLETE: 100% ACCURATE FILTERING & ZERO REGRESSIONS');
 console.log('=============================================================');

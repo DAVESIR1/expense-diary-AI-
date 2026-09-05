@@ -84,6 +84,7 @@ export const CLEARSMS_GUARDS = {
     /\bread(?:y)?\s+to\s+be\s+credited\b/i,
     /\b(?:instant loan|apply for loan|loan eligible|congratulations! you are eligible)\b/i,
     /\b(?:increase credit limit|credit card offer|lifetime free card)\b/i,
+    /\b(?:funds above your salary|salary to get credited\?|pre-approved for personal loan|congratulations your eligibility get monthly salary|work from home with salary)\b/i,
   ],
   // 7. Shortened URL phishing & Prize/Lottery scam bait
   genericScam: [
@@ -110,6 +111,7 @@ export const CLEARSMS_GUARDS = {
   marketingPitch: [
     /\b(?:reap\s+benefits?|wealth\s+creation|grow\s+your\s+(?:money|wealth)|start\s+investing|invest\s+today)\b/i,
     /\b(?:vouchers?|coupons?|gift\s*cards?|promo\s+code)\b/i,
+    /\b(?:time to give your portfolio a raise|invest smart on|salary received\?\s*rs\.?\s*[\d,]+.*invested in this fund)\b/i,
   ],
   // 12. Payout / Refund in flight (not yet landed in user bank account)
   payoutInFlight: [
@@ -314,10 +316,12 @@ export const INVESTMENT_PATTERNS = {
 export const SALARY_PATTERNS = [
   /\bsalary\b/i,
   /\bpayroll\b/i,
-  /\bsal cr\b/i,
+  /\bby\s+salary\b/i,
+  /\bsal\s*cr(?:edit)?\b/i,
   /\bstipend\b/i,
   /\bmonthly stipend\b/i,
   /\bwages\b/i,
+  /\bsalary-sbi\b/i,
 ];
 
 export const UPI_TRANSFER_PATTERNS = [
@@ -566,6 +570,13 @@ export function isSpamOrNonTransaction(text: string): boolean {
   // 2. If message contains an explicit transaction flow, check strict spam patterns
   const hasTransactionFlow = lower.includes('debited') ||
                              lower.includes('credited') ||
+                             lower.includes('has credit') ||
+                             lower.includes('credit for') ||
+                             lower.includes('credit of') ||
+                             lower.includes('by salary') ||
+                             lower.includes('salary') ||
+                             lower.includes('payroll') ||
+                             lower.includes('stipend') ||
                              lower.includes('paid') ||
                              lower.includes('spent') ||
                              lower.includes('sent') ||
@@ -580,6 +591,7 @@ export function isSpamOrNonTransaction(text: string): boolean {
       /\bvalid for \d+ min\b/i,
       /\b(?:pre[- ]approved|instant loan|apply for loan|congratulations! you are eligible)\b/i,
       /\b(?:win cash|claim your reward|lucky winner|click here to apply)\b/i,
+      /\b(?:funds above your salary|work from home with salary)\b/i,
     ];
     return strictSpam.some((pattern) => pattern.test(text));
   }
