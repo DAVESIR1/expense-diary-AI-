@@ -212,20 +212,20 @@ export const FinancialEmailSyncModal: React.FC<FinancialEmailSyncModalProps> = (
 
           {activeTab === 'eml' && (
             <div className="space-y-4">
-              <div className="border-2 border-dashed border-stone-300 rounded-3xl p-8 text-center bg-stone-50 hover:bg-stone-100/80 transition flex flex-col items-center justify-center">
-                <FileText className="w-10 h-10 text-stone-400 mb-3" />
+              <div className="border-2 border-dashed border-indigo-200 rounded-3xl p-8 text-center bg-indigo-50/40 hover:bg-indigo-50/80 transition flex flex-col items-center justify-center">
+                <FileText className="w-10 h-10 text-indigo-500 mb-3" />
                 <p className="text-sm font-bold text-stone-800">
-                  {isGu ? 'CRA-NSDL અથવા બેંક ઈમેલ ફાઈલ (.eml) પસંદ કરો' : 'Select .eml or email statement file'}
+                  {isGu ? 'CRA-NSDL, બેંક ઈમેલ (.eml) અથવા ડેટાબેઝ ફાઈલ (.mbox) પસંદ કરો' : 'Select .eml or email database file (.mbox)'}
                 </p>
                 <p className="text-xs text-stone-500 mt-1 mb-4">
-                  {isGu ? 'ઓફલાઇન ઇમ્પોર્ટ માટે કોઈ લોગિનની જરૂર નથી' : 'No sign-in required for offline statement imports'}
+                  {isGu ? 'Google Takeout માંથી ડાઉનલોડ કરેલ .mbox ફાઈલ દ્વારા હજારો ઈમેલ એકસાથે સ્કેન થઈ શકે છે' : 'Single .eml or full mailbox database (.mbox) from Google Takeout'}
                 </p>
 
-                <label className="py-2.5 px-5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shadow-xs transition cursor-pointer">
-                  <span>{isGu ? 'ફાઈલ પસંદ કરો' : 'Browse File'}</span>
+                <label className="py-2.5 px-5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shadow-sm transition cursor-pointer">
+                  <span>{isGu ? 'ફાઈલ પસંદ કરો (.eml / .mbox)' : 'Browse File (.eml / .mbox)'}</span>
                   <input
                     type="file"
-                    accept=".eml,.txt,.json,.msg"
+                    accept=".eml,.mbox,.txt,.json,.msg"
                     onChange={handleEmlFileUpload}
                     className="hidden"
                   />

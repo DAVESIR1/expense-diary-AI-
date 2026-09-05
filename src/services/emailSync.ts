@@ -346,89 +346,112 @@ export const EmailSyncService = {
   /**
    * Parse raw .EML or text file offline without signing in
    */
+  /**
+   * Parse raw .EML, .MBOX database, or text file offline without signing in
+   */
   async parseEmlFile(
     fileContent: string,
     fileName: string = 'statement.eml',
     existingTransactions: Transaction[] = []
   ): Promise<EmailSyncResult> {
     try {
-      // Simple MIME/Header extractor
-      const headerBodySplit = fileContent.split(/\r?\n\r?\n/);
-      const rawHeaders = headerBodySplit[0] || '';
-      const body = headerBodySplit.slice(1).join('\n') || fileContent;
+      // Check if file is an .mbox database containing multiple emails
+      const isMbox = fileName.toLowerCase().endsWith('.mbox') || /^From\s+[^\r\n]+/m.test(fileContent);
+      const emailBlocks: string[] = isMbox
+        ? fileContent.split(/(?:^|\r?\n)(?=From\s+[^\r\n]+)/g).map((b) => b.trim()).filter(Boolean)
+        : [fileContent];
 
-      let subject = '';
-      let from = '';
-      let dateStr = '';
+      const newTransactions: Transaction[] = [];
+      let duplicatesSkipped = 0;
+      let totalAmountExtracted = 0;
+      const sendersSet = new Set<string>();
 
-      const subMatch = rawHeaders.match(/^Subject:\s*(.*)$/im);
-      if (subMatch) subject = subMatch[1].trim();
+      for (const block of emailBlocks) {
+        // Simple MIME/Header extractor
+        const headerBodySplit = block.split(/\r?\n\r?\n/);
+        const rawHeaders = headerBodySplit[0] || '';
+        const body = headerBodySplit.slice(1).join('\n') || block;
 
-      const fromMatch = rawHeaders.match(/^From:\s*(.*)$/im);
-      if (fromMatch) from = fromMatch[1].trim();
+        let subject = '';
+        let from = '';
+        let dateStr = '';
 
-      const dateMatch = rawHeaders.match(/^Date:\s*(.*)$/im);
-      if (dateMatch) dateStr = dateMatch[1].trim();
+        const subMatch = rawHeaders.match(/^Subject:\s*(.*)$/im);
+        if (subMatch) subject = subMatch[1].trim();
 
-      const timestamp = dateStr ? new Date(dateStr).getTime() : Date.now();
-      const parsed = parseFinancialEmail(subject || fileName, body, from, timestamp);
+        const fromMatch = rawHeaders.match(/^From:\s*(.*)$/im);
+        if (fromMatch) from = fromMatch[1].trim();
 
-      if (!parsed) {
+        const dateMatch = rawHeaders.match(/^Date:\s*(.*)$/im);
+        if (dateMatch) dateStr = dateMatch[1].trim();
+
+        const timestamp = dateStr && !isNaN(new Date(dateStr).getTime()) ? new Date(dateStr).getTime() : Date.now();
+        const parsed = parseFinancialEmail(subject || fileName, body, from, timestamp);
+
+        if (!parsed) continue;
+
+        sendersSet.add(parsed.sender);
+
+        const isDuplicate =
+          existingTransactions.some(
+            (t) =>
+              (parsed.referenceNumber && t.referenceNumber === parsed.referenceNumber) ||
+              (t.amount === parsed.amount && t.date === parsed.date && t.title === parsed.title)
+          ) ||
+          newTransactions.some(
+            (t) =>
+              (parsed.referenceNumber && t.referenceNumber === parsed.referenceNumber) ||
+              (t.amount === parsed.amount && t.date === parsed.date && t.title === parsed.title)
+          );
+
+        if (isDuplicate) {
+          duplicatesSkipped++;
+          continue;
+        }
+
+        const txn: Transaction = {
+          id: parsed.id,
+          type: parsed.type,
+          amount: parsed.amount,
+          title: parsed.title,
+          category: parsed.category,
+          date: parsed.date,
+          time: parsed.time,
+          vendorOrPerson: parsed.vendorOrPerson,
+          paymentMode: 'Direct Transfer',
+          notes: parsed.accountInfo ? `${parsed.sender} (${parsed.accountInfo})` : parsed.sender,
+          isAiGenerated: true,
+          needsConfirmation: false,
+          evidence: parsed.evidence,
+          evidenceSource: 'email',
+          evidenceSender: parsed.sender,
+          referenceNumber: parsed.referenceNumber,
+          updatedAt: new Date().toISOString(),
+        };
+
+        newTransactions.push(txn);
+        totalAmountExtracted += txn.amount;
+      }
+
+      if (newTransactions.length === 0 && duplicatesSkipped === 0) {
         return {
           success: false,
-          totalEmailsScanned: 1,
+          totalEmailsScanned: emailBlocks.length,
           newTransactions: [],
           duplicatesSkipped: 0,
           totalAmountExtracted: 0,
-          identifiedSenders: [],
-          error: 'No valid financial transaction or NPS contribution found in this email file.',
+          identifiedSenders: Array.from(sendersSet),
+          error: `Scanned ${emailBlocks.length} email(s), but no valid financial transactions (NPS, Salary, Bank debit/credit) were found.`,
         };
       }
-
-      const isDuplicate = existingTransactions.some(
-        (t) =>
-          (parsed.referenceNumber && t.referenceNumber === parsed.referenceNumber) ||
-          (t.amount === parsed.amount && t.date === parsed.date && t.title === parsed.title)
-      );
-
-      if (isDuplicate) {
-        return {
-          success: true,
-          totalEmailsScanned: 1,
-          newTransactions: [],
-          duplicatesSkipped: 1,
-          totalAmountExtracted: 0,
-          identifiedSenders: [parsed.sender],
-        };
-      }
-
-      const txn: Transaction = {
-        id: parsed.id,
-        type: parsed.type,
-        amount: parsed.amount,
-        title: parsed.title,
-        category: parsed.category,
-        date: parsed.date,
-        time: parsed.time,
-        vendorOrPerson: parsed.vendorOrPerson,
-        paymentMode: 'Direct Transfer',
-        notes: parsed.accountInfo ? `${parsed.sender} (${parsed.accountInfo})` : parsed.sender,
-        isAiGenerated: true,
-        needsConfirmation: false,
-        evidence: parsed.evidence,
-        evidenceSource: 'email',
-        evidenceSender: parsed.sender,
-        referenceNumber: parsed.referenceNumber,
-        updatedAt: new Date().toISOString(),
-      };
 
       return {
         success: true,
-        totalEmailsScanned: 1,
-        newTransactions: [txn],
-        duplicatesSkipped: 0,
-        totalAmountExtracted: txn.amount,
-        identifiedSenders: [parsed.sender],
+        totalEmailsScanned: emailBlocks.length,
+        newTransactions,
+        duplicatesSkipped,
+        totalAmountExtracted,
+        identifiedSenders: Array.from(sendersSet),
       };
     } catch (err: any) {
       return {
@@ -438,7 +461,7 @@ export const EmailSyncService = {
         duplicatesSkipped: 0,
         totalAmountExtracted: 0,
         identifiedSenders: [],
-        error: err.message || 'Failed to read .eml file.',
+        error: err.message || 'Failed to read email database file.',
       };
     }
   },
