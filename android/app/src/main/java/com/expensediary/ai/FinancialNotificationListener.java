@@ -76,6 +76,11 @@ public class FinancialNotificationListener extends NotificationListenerService {
             return;
         }
 
+        boolean isEmailApp = lowerPkg.contains("android.gm") ||
+                             lowerPkg.contains("email") ||
+                             lowerPkg.contains("outlook") ||
+                             lowerPkg.contains("mail");
+
         boolean hasFinancialKeywords = lowerText.contains("rs.") ||
                                        lowerText.contains("rs ") ||
                                        lowerText.contains("rs:") ||
@@ -92,12 +97,15 @@ public class FinancialNotificationListener extends NotificationListenerService {
                                        lowerText.contains("spent") ||
                                        lowerText.contains("received") ||
                                        lowerText.contains("transferred") ||
+                                       lowerText.contains("contribution") ||
+                                       lowerText.contains("pran") ||
                                        lowerText.contains("nps") ||
                                        lowerText.contains("upi");
 
-        if (isFinancialApp || hasFinancialKeywords) {
+        if (isFinancialApp || (isEmailApp && hasFinancialKeywords) || hasFinancialKeywords) {
             saveFinancialNotification(this, pkg, title, text, sbn.getPostTime());
-            FinancialSmsReceiver.savePendingTransaction(this, "notification", pkg, combined, sbn.getPostTime());
+            String sourceTag = isEmailApp ? "email" : "notification";
+            FinancialSmsReceiver.savePendingTransaction(this, sourceTag, pkg, combined, sbn.getPostTime());
         }
     }
 
