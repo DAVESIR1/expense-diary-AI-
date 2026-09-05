@@ -10,7 +10,9 @@ export const DEFAULT_CATEGORIES: Category[] = [
   { id: 'cat-entertainment', name: 'Entertainment', nameGu: 'મનોરંજન અને OTT', icon: 'Tv', type: 'expense', color: '#9333EA' },
   { id: 'cat-salary', name: 'Salary', nameGu: 'પગાર (Salary)', icon: 'Briefcase', type: 'income', color: '#059669' },
   { id: 'cat-business', name: 'Business & Freelance', nameGu: 'વેપાર અને ફ્રીલાન્સ', icon: 'TrendingUp', type: 'income', color: '#0D9488' },
-  { id: 'cat-investment', name: 'Investment Returns', nameGu: 'રોકાણ પર વળતર', icon: 'PiggyBank', type: 'income', color: '#4F46E5' },
+  { id: 'cat-investment-outflow', name: 'Investment', nameGu: 'રોકાણ (NPS/SIP)', icon: 'PiggyBank', type: 'expense', color: '#4F46E5' },
+  { id: 'cat-transfer', name: 'Transfer', nameGu: 'ટ્રાન્સફર (UPI / ખાતામાં)', icon: 'ArrowLeftRight', type: 'both', color: '#0284C7' },
+  { id: 'cat-investment', name: 'Investment Returns', nameGu: 'રોકાણ પર વળતર / રીડીમ્પશન', icon: 'TrendingUp', type: 'income', color: '#6366F1' },
   { id: 'cat-other-income', name: 'Other Income', nameGu: 'અન્ય આવક', icon: 'ArrowDownLeft', type: 'income', color: '#10B981' },
   { id: 'cat-other-expense', name: 'Other Expense', nameGu: 'અન્ય પરચુરણ ખર્ચ', icon: 'ArrowUpRight', type: 'expense', color: '#64748B' },
 ];

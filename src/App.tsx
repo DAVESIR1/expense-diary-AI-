@@ -29,12 +29,13 @@ import { OnboardingModal } from './components/OnboardingModal';
 import { AIAssistantModal } from './components/AIAssistantModal';
 import { AndroidSMSPermissionModal } from './components/AndroidSMSPermissionModal';
 import { SmartTransactionScanModal, ScannedCandidate } from './components/SmartTransactionScanModal';
+import { TransactionAmbiguityModal } from './components/TransactionAmbiguityModal';
 import { AuthLockScreen } from './components/AuthLockScreen';
 import { checkAndTriggerDailyReminder } from './services/notifications';
 import { hashWithPBKDF2 } from './services/security';
 import { MigrationManager } from './services/dataMigration';
 import { NativeBridgeService } from './services/nativeBridge';
-import { parseTransactionMessage } from './utils/smsParser';
+import { parseTransactionMessage, ParsedExpenseMessage } from './utils/smsParser';
 import { VaultStorage } from './services/vaultStorage';
 
 // Sequential data migration & backward compatibility (§21)
@@ -192,6 +193,8 @@ export default function App() {
   // Smart SMS Scan State (Task 2 & 17)
   const [isScanModalOpen, setIsScanModalOpen] = useState(false);
   const [scannedCandidates, setScannedCandidates] = useState<ScannedCandidate[]>([]);
+  const [ambiguityQueue, setAmbiguityQueue] = useState<ParsedExpenseMessage[]>([]);
+  const [ambiguityIndex, setAmbiguityIndex] = useState<number>(0);
 
   const handleScanSMS = async (): Promise<number> => {
     try {
@@ -200,67 +203,145 @@ export default function App() {
       if (!permStatus.sms) {
         const granted = await NativeBridgeService.requestSMSPermissions();
         if (!granted) {
-          // Open direct modal with guidance if blocked by Android
           setIsSmsModalOpen(true);
           return 0;
         }
       }
 
-      const messages = await NativeBridgeService.readRecentBankSMS();
-      if (!messages || messages.length === 0) return 0;
+      // 1. Fetch from 24/7 background receiver (catches SMS & notifications received when app was closed/backgrounded)
+      const pendingBg = await NativeBridgeService.getPendingIncomingTransactions();
+      // 2. Fetch from active SMS inbox content provider
+      const bankSms = await NativeBridgeService.readRecentBankSMS();
+      // 3. Fetch from recent saved notifications
+      const recentNotifs = await NativeBridgeService.getRecentFinancialNotifications();
+
+      const rawItems: Array<{ body: string; sender?: string; timestamp?: number; source: 'sms' | 'notification' }> = [];
+
+      for (const item of pendingBg) {
+        if (item && item.text) {
+          rawItems.push({ body: item.text, sender: item.sender, timestamp: item.timestamp, source: item.source });
+        }
+      }
+      for (const msg of bankSms) {
+        if (msg && msg.body) {
+          rawItems.push({ body: msg.body, sender: msg.address, timestamp: msg.timestamp, source: 'sms' });
+        }
+      }
+      for (const notif of recentNotifs) {
+        if (notif && notif.text) {
+          const combined = `${notif.title} ${notif.text}`.trim();
+          rawItems.push({ body: combined, sender: notif.packageName, timestamp: notif.timestamp, source: 'notification' });
+        }
+      }
+
+      if (rawItems.length === 0) return 0;
 
       const candidates: ScannedCandidate[] = [];
-      for (const msg of messages) {
-        const parsed = parseTransactionMessage(msg.body, categories, 'sms', {
-          timestamp: msg.timestamp,
-          sender: msg.address,
+      const newAmbiguous: ParsedExpenseMessage[] = [];
+      const seenRaw = new Set<string>();
+
+      for (const raw of rawItems) {
+        if (seenRaw.has(raw.body)) continue;
+        seenRaw.add(raw.body);
+
+        const parsed = parseTransactionMessage(raw.body, categories, raw.source, {
+          timestamp: raw.timestamp,
+          sender: raw.sender,
         });
+
         if (parsed) {
-          const alreadyExists = transactions.some(
-            (t) =>
-              (t.evidence && t.evidence.includes(msg.body)) ||
-              (t.amount === parsed.amount && t.date === parsed.date && t.title === parsed.title)
-          );
+          const alreadyExists = transactions.some((t) => {
+            if (t.referenceNumber && parsed.referenceNumber && t.referenceNumber === parsed.referenceNumber) {
+              return true;
+            }
+            if (t.evidence && t.evidence.includes(raw.body)) {
+              return true;
+            }
+            return (
+              t.amount === parsed.amount &&
+              t.date === parsed.date &&
+              (t.title === parsed.title || t.vendorOrPerson === parsed.vendorOrPerson)
+            );
+          });
+
           if (!alreadyExists) {
-            candidates.push({
-              id: msg.id || `scanned-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
-              selected: true,
-              type: parsed.type,
-              amount: parsed.amount,
-              title: parsed.title,
-              category: parsed.category,
-              vendorOrPerson: parsed.vendorOrPerson,
-              paymentMode: parsed.paymentMode,
-              date: parsed.date,
-              time: parsed.time,
-              bankOrSource: parsed.bankOrSource,
-              evidence: msg.body,
-              confidence: parsed.confidence,
-            });
+            // Check if transaction has ambiguity or needs user confirmation (Requirement 1)
+            if (parsed.needsReview || parsed.confidence < 0.85) {
+              const inQueue = ambiguityQueue.some(
+                (q) => q.amount === parsed.amount && q.date === parsed.date && q.title === parsed.title
+              );
+              if (!inQueue) {
+                newAmbiguous.push(parsed);
+              }
+            } else {
+              candidates.push({
+                id: `scanned-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
+                selected: true,
+                type: parsed.type,
+                amount: parsed.amount,
+                title: parsed.title,
+                category: parsed.category,
+                vendorOrPerson: parsed.vendorOrPerson,
+                paymentMode: parsed.paymentMode,
+                date: parsed.date,
+                time: parsed.time,
+                bankOrSource: parsed.bankOrSource,
+                evidence: raw.body,
+                confidence: parsed.confidence,
+              });
+            }
           }
         }
+      }
+
+      if (newAmbiguous.length > 0) {
+        setAmbiguityQueue((prev) => [...prev, ...newAmbiguous]);
       }
 
       if (candidates.length > 0) {
         setScannedCandidates(candidates);
         setIsScanModalOpen(true);
-        return candidates.length;
       }
-      return 0;
+
+      return candidates.length + newAmbiguous.length;
     } catch {
       return 0;
     }
   };
 
-  // Auto-scan on startup once unlocked and onboarded (Task 2)
+  // Continuous Auto-scan: Runs on startup, app resume from background (e.g. after UPI payment), and focus
   useEffect(() => {
-    if (!isAppLocked && !showOnboarding) {
-      const timer = setTimeout(() => {
+    if (isAppLocked || showOnboarding) return;
+
+    const timer = setTimeout(() => {
+      handleScanSMS();
+    }, 1000);
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        console.log('[App] Resumed to foreground, scanning incoming financial transactions');
         handleScanSMS();
-      }, 1200);
-      return () => clearTimeout(timer);
-    }
-  }, [isAppLocked, showOnboarding]);
+      }
+    };
+
+    const onWindowFocus = () => {
+      handleScanSMS();
+    };
+
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    window.addEventListener('focus', onWindowFocus);
+
+    const interval = setInterval(() => {
+      handleScanSMS();
+    }, 45000);
+
+    return () => {
+      clearTimeout(timer);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+      window.removeEventListener('focus', onWindowFocus);
+      clearInterval(interval);
+    };
+  }, [isAppLocked, showOnboarding, transactions.length]);
 
   // Synchronize from native Android persistent storage upon app update/launch
   useEffect(() => {
@@ -975,6 +1056,44 @@ export default function App() {
           setTransactions((prev) => [...approved, ...prev]);
         }}
       />
+
+      {/* Queued Fullscreen Pop-up for Ambiguous / Confused Transactions (Requirement 1 & 2) */}
+      {ambiguityQueue.length > 0 && ambiguityIndex < ambiguityQueue.length && (
+        <TransactionAmbiguityModal
+          queue={ambiguityQueue}
+          currentIndex={ambiguityIndex}
+          categories={categories}
+          currency={currency}
+          currentLang={currentLang}
+          onConfirm={(confirmed) => {
+            const newTx: Transaction = {
+              id: `tx-ambig-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
+              type: confirmed.type,
+              amount: confirmed.amount,
+              title: confirmed.title,
+              category: confirmed.category,
+              vendorOrPerson: confirmed.vendorOrPerson,
+              paymentMode: confirmed.paymentMode,
+              date: confirmed.date,
+              time: confirmed.time,
+              evidence: confirmed.evidence,
+              evidenceSource: confirmed.evidenceSource,
+              referenceNumber: confirmed.referenceNumber,
+              isAiGenerated: true,
+              needsConfirmation: false,
+            };
+            setTransactions((prev) => [newTx, ...prev]);
+            setAmbiguityIndex((prev) => prev + 1);
+          }}
+          onSkip={() => {
+            setAmbiguityIndex((prev) => prev + 1);
+          }}
+          onDismissQueue={() => {
+            setAmbiguityQueue([]);
+            setAmbiguityIndex(0);
+          }}
+        />
+      )}
     </div>
   );
 }

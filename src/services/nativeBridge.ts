@@ -19,6 +19,14 @@ export interface NativePermissionsStatus {
   usage: boolean;
 }
 
+export interface IncomingBackgroundTransaction {
+  id: string;
+  source: 'sms' | 'notification';
+  sender: string;
+  text: string;
+  timestamp: number;
+}
+
 interface NativeBridgePluginInterface {
   checkPermissions(): Promise<NativePermissionsStatus>;
   requestSMSPermissions(): Promise<{ granted: boolean }>;
@@ -29,6 +37,7 @@ interface NativeBridgePluginInterface {
   openUsageSettings(): Promise<{ success: boolean }>;
   getRecentPaymentAppUsage(): Promise<{ hasPermission: boolean; apps: AppUsageRecord[] }>;
   readRecentBankSMS(options?: { days?: number }): Promise<{ hasPermission: boolean; messages: BankSMSMessage[]; count?: number }>;
+  getPendingIncomingTransactions(): Promise<{ transactions: IncomingBackgroundTransaction[]; count: number }>;
   showNotification(options: { title: string; body: string }): Promise<{ success: boolean }>;
   saveFileToDownloads(options: { fileName: string; mimeType: string; base64Data?: string; textContent?: string }): Promise<{ success: boolean; filePath?: string; fileName?: string }>;
   shareFile(options: { fileName: string; mimeType: string; base64Data?: string; textContent?: string; title?: string }): Promise<{ success: boolean }>;
@@ -428,6 +437,20 @@ export const NativeBridgeService = {
       return [];
     }
   },
+
+  /**
+   * Drain background incoming transactions captured by 24/7 SMS receiver & Notification listener.
+   */
+  async getPendingIncomingTransactions(): Promise<IncomingBackgroundTransaction[]> {
+    try {
+      const res = await NativeBridgeImpl.getPendingIncomingTransactions();
+      return res?.transactions || [];
+    } catch {
+      return [];
+    }
+  },
+
+
 
   /**
    * Save complete encrypted app vault to native persistent Android storage (SharedPreferences + FilesDir).

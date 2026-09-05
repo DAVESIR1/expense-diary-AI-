@@ -16,7 +16,14 @@ import {
   ShieldCheck,
   Image as ImageIcon,
   Edit3,
-  Calendar
+  Calendar,
+  ChevronDown,
+  PiggyBank,
+  ShoppingBag,
+  Receipt,
+  ArrowLeftRight,
+  Banknote,
+  Sparkles
 } from 'lucide-react';
 import { Transaction, TransactionType, PendingAIMessage, Category, UserProfile } from '../types';
 import { TranslationStrings } from '../data/languages';
@@ -57,40 +64,50 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
   const [editingCategoryMsgId, setEditingCategoryMsgId] = useState<string | null>(null);
   const [tempCategory, setTempCategory] = useState<string>('');
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [showNoTxModal, setShowNoTxModal] = useState(false);
   const [showOfflinePrompt, setShowOfflinePrompt] = useState(false);
   const [touchStartY, setTouchStartY] = useState(0);
+  const [pullDistance, setPullDistance] = useState(0);
   const [previewEvidenceTx, setPreviewEvidenceTx] = useState<Transaction | null>(null);
   const [selectedTxForDetail, setSelectedTxForDetail] = useState<Transaction | null>(null);
 
-  // Time Period Filter: 'month' (default) | 'year' | 'all'
-  const [timePeriod, setTimePeriod] = useState<'month' | 'year' | 'all'>('month');
+  // Time Period Filter: 'today' | 'month' (default) | 'year' | 'all'
+  const [timePeriod, setTimePeriod] = useState<'today' | 'month' | 'year' | 'all'>('month');
+  const [categoryFilter, setCategoryFilter] = useState<'all' | 'investment' | 'shopping' | 'bills' | 'transfer' | 'offline'>('all');
   const [filterMonth, setFilterMonth] = useState<string>(new Date().toISOString().substring(0, 7));
   const [filterYear, setFilterYear] = useState<string>(new Date().getFullYear().toString());
 
   const isGu = currentLang === 'gu';
 
+  const todayDateStr = new Date().toISOString().split('T')[0];
+
   const handlePullRefresh = async () => {
     if (isRefreshing) return;
     setIsRefreshing(true);
-    setShowOfflinePrompt(false);
+    setPullDistance(0);
+    setShowNoTxModal(false);
     try {
       if (onTriggerScan) {
         const found = await onTriggerScan();
         if (found === 0) {
-          setShowOfflinePrompt(true);
+          setShowNoTxModal(true);
         }
       } else {
-        setTimeout(() => setShowOfflinePrompt(true), 600);
+        setTimeout(() => setShowNoTxModal(true), 600);
       }
     } catch {
-      setShowOfflinePrompt(true);
+      setShowNoTxModal(true);
     } finally {
       setIsRefreshing(false);
+      setPullDistance(0);
     }
   };
 
-  // Transactions filtered by selected time period
+  // Transactions filtered by selected time period (today, month, year, all)
   const periodTransactions = transactions.filter((tx) => {
+    if (timePeriod === 'today') {
+      return tx.date === todayDateStr;
+    }
     if (timePeriod === 'month') {
       return tx.date.startsWith(filterMonth);
     }
@@ -101,21 +118,65 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
   });
 
   // Calculate totals strictly based on selected period
+  // CRITICAL REQUIREMENT: Investments (NPS, SIP, etc.) are NOT income!
   const totalIncome = periodTransactions
-    .filter((tx) => tx.type === 'income')
+    .filter((tx) => {
+      if (tx.type !== 'income') return false;
+      const lowerCat = tx.category.toLowerCase();
+      // Exclude investment contributions if recorded with type 'income'
+      if (lowerCat.includes('investment') && !lowerCat.includes('return') && !lowerCat.includes('વળતર') && !lowerCat.includes('redemption')) {
+        return false;
+      }
+      return true;
+    })
     .reduce((sum, item) => sum + item.amount, 0);
 
   const totalExpense = periodTransactions
     .filter((tx) => tx.type === 'expense')
     .reduce((sum, item) => sum + item.amount, 0);
 
+  // Total investment tracked in selected period
+  const totalInvestment = periodTransactions
+    .filter((tx) => {
+      const lowerCat = tx.category.toLowerCase();
+      return lowerCat.includes('investment') || lowerCat.includes('રોકાણ') || lowerCat.includes('nps') || lowerCat.includes('sip');
+    })
+    .reduce((sum, item) => sum + item.amount, 0);
+
   const netBalance = totalIncome - totalExpense;
 
-  // Filter transactions for list (combines period + search + income/expense filter)
+  // Filter transactions for list (combines period + search + income/expense filter + category tabs)
   const filteredTransactions = periodTransactions.filter((item) => {
     if (selectedFilterType !== 'all' && item.type !== selectedFilterType) {
       return false;
     }
+
+    if (categoryFilter === 'investment') {
+      const c = item.category.toLowerCase();
+      if (!c.includes('investment') && !c.includes('રોકાણ') && !c.includes('nps') && !c.includes('sip') && !c.includes('mutual')) {
+        return false;
+      }
+    } else if (categoryFilter === 'shopping') {
+      const c = item.category.toLowerCase();
+      if (!c.includes('shopping') && !c.includes('ખરીદી')) {
+        return false;
+      }
+    } else if (categoryFilter === 'bills') {
+      const c = item.category.toLowerCase();
+      if (!c.includes('bill') && !c.includes('બિલ') && !c.includes('utilit') && !c.includes('recharge') && !c.includes('fastag')) {
+        return false;
+      }
+    } else if (categoryFilter === 'transfer') {
+      const c = item.category.toLowerCase();
+      if (!c.includes('transfer') && !c.includes('ટ્રાન્સફર') && item.paymentMode !== 'UPI') {
+        return false;
+      }
+    } else if (categoryFilter === 'offline') {
+      if (item.paymentMode !== 'Cash' && item.paymentMode !== 'ATM / Cash' && !item.category.toLowerCase().includes('other')) {
+        return false;
+      }
+    }
+
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
       const matchTitle = item.title.toLowerCase().includes(q);
@@ -139,61 +200,125 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
   return (
     <div 
       id="home-screen-container" 
-      className="space-y-5 pb-28"
-      onTouchStart={(e) => setTouchStartY(e.touches[0].clientY)}
-      onTouchEnd={(e) => {
-        const deltaY = e.changedTouches[0].clientY - touchStartY;
-        if (deltaY > 80 && window.scrollY <= 10) {
-          handlePullRefresh();
+      className="space-y-5 pb-28 select-none transition-all"
+      onTouchStart={(e) => {
+        if (window.scrollY <= 5) {
+          setTouchStartY(e.touches[0].clientY);
         }
       }}
+      onTouchMove={(e) => {
+        if (touchStartY > 0 && window.scrollY <= 5) {
+          const currentY = e.touches[0].clientY;
+          const diff = currentY - touchStartY;
+          if (diff > 0) {
+            setPullDistance(Math.min(95, Math.round(diff * 0.45)));
+          }
+        }
+      }}
+      onTouchEnd={() => {
+        if (pullDistance >= 60 && !isRefreshing) {
+          handlePullRefresh();
+        } else {
+          setPullDistance(0);
+        }
+        setTouchStartY(0);
+      }}
     >
-      {/* Pull-to-Refresh & Auto-Scan Trigger Bar */}
-      <div className="flex items-center justify-between px-1">
-        <button
-          onClick={handlePullRefresh}
-          disabled={isRefreshing}
-          className="flex items-center gap-1.5 text-xs font-semibold text-stone-500 hover:text-stone-800 transition cursor-pointer select-none"
-        >
-          <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin text-emerald-600' : 'text-stone-400'}`} />
-          <span>{isRefreshing ? (isGu ? 'SMS સ્કેન થઈ રહ્યા છે...' : 'Scanning SMS...') : (isGu ? 'નીચે ખેંચો અથવા ટેપ કરી SMS તપાસો' : 'Pull down or tap to scan SMS')}</span>
-        </button>
-        {monthlyBudgetGoal > 0 && (
-          <span className="text-[11px] font-bold text-stone-400 font-mono">
-            {isGu ? `બજેટ વપરાશ: ${budgetPercentage}%` : `Budget: ${budgetPercentage}%`}
-          </span>
+      {/* 1. TOP PULL-DOWN MINIMAL ARROW & GESTURE REVEAL */}
+      <div className="flex flex-col items-center justify-center -mt-2 mb-1">
+        {/* Blinking Pull-Down Indicator (Only icon, no static cluttered text) */}
+        {!isRefreshing && pullDistance === 0 && (
+          <button
+            type="button"
+            onClick={handlePullRefresh}
+            className="flex flex-col items-center justify-center py-1 opacity-70 hover:opacity-100 transition cursor-pointer group"
+            title={isGu ? 'નીચે ખેંચો અથવા ટેપ કરી સ્કેન કરો' : 'Pull down or tap to scan'}
+          >
+            <ChevronDown className="w-5 h-5 text-emerald-600 animate-bounce group-hover:scale-110 transition" />
+          </button>
+        )}
+
+        {/* Dynamic Pull Gesture Reveal (Visible only while user is actively dragging down) */}
+        {pullDistance > 0 && !isRefreshing && (
+          <div 
+            style={{ height: `${pullDistance}px` }} 
+            className="w-full flex items-center justify-center bg-gradient-to-b from-emerald-100/90 to-emerald-50/50 rounded-2xl border border-emerald-200 shadow-2xs transition-all overflow-hidden px-4"
+          >
+            <div className="flex items-center gap-2 text-xs font-bold text-emerald-900">
+              <ChevronDown className={`w-4 h-4 text-emerald-700 transition-transform duration-200 ${
+                pullDistance >= 60 ? 'rotate-180 text-emerald-900' : ''
+              }`} />
+              <span>
+                {pullDistance >= 60 
+                  ? (isGu ? 'સ્કેનિંગ શરૂ કરવા છોડી દો!' : 'Release to start scanning!') 
+                  : (isGu ? 'નવા SMS, નોટિફિકેશન અને UPI વ્યવહારો સ્કેન કરવા નીચે ખેંચો...' : 'Pull down to scan new transactions...')}
+              </span>
+            </div>
+          </div>
+        )}
+
+        {/* Active Scanning Minimal State */}
+        {isRefreshing && (
+          <div className="w-full py-3 px-4 rounded-2xl bg-emerald-950 text-white flex items-center justify-center gap-3 shadow-md animate-pulse">
+            <div className="w-4 h-4 rounded-full border-2 border-emerald-400 border-t-transparent animate-spin" />
+            <span className="text-xs font-bold tracking-wide">
+              {isGu ? 'નવા SMS, નોટિફિકેશન અને UPI વ્યવહારો સ્કેન થઈ રહ્યા છે...' : 'Scanning SMS, notifications & UPI expenses...'}
+            </span>
+          </div>
         )}
       </div>
 
-      {/* Offline Expense Query Prompt (When no new SMS detected) */}
-      {showOfflinePrompt && (
-        <div className="p-4 rounded-3xl bg-amber-50/90 border border-amber-200 text-amber-950 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs animate-in fade-in">
-          <div className="space-y-0.5">
-            <p className="font-bold text-amber-900 flex items-center gap-1.5">
-              <AlertCircle className="w-4 h-4 text-amber-600" />
-              <span>{isGu ? 'હાલમાં કોઈ નવો ઓનલાઈન ટ્રાન્ઝેક્શન મળ્યો નથી.' : 'No new online bank transactions found.'}</span>
-            </p>
-            <p className="text-[11px] text-amber-900/90">
-              {isGu
-                ? 'શું તમે તાજેતરમાં કોઈ રોકડ કે ઓફલાઇન ખર્ચ કર્યો છે?'
-                : 'Did you make any recent cash or offline expense?'}
-            </p>
-          </div>
-          <div className="flex items-center gap-2 shrink-0">
+      {/* Fullscreen Interactive Modal when NO new transactions detected */}
+      {showNoTxModal && (
+        <div className="fixed inset-0 z-50 bg-stone-900/80 backdrop-blur-md flex items-center justify-center p-4 animate-fadeIn">
+          <div className="w-full max-w-md bg-white rounded-3xl p-6 shadow-2xl border border-stone-200 text-center space-y-4">
+            <div className="w-16 h-16 rounded-3xl bg-amber-100 text-amber-600 flex items-center justify-center mx-auto shadow-inner">
+              <AlertCircle className="w-8 h-8" />
+            </div>
+
+            <div className="space-y-1.5">
+              <h3 className="text-lg font-bold text-stone-900">
+                {isGu ? 'કોઈ નવો SMS કે વ્યવહાર મળ્યો નથી' : 'No New Transactions Found'}
+              </h3>
+              <p className="text-xs text-stone-600 leading-relaxed max-w-xs mx-auto">
+                {isGu 
+                  ? 'તમારા તાજેતરના SMS કે નોટિફિકેશનમાં કોઈ નવો વ્યવહાર મળ્યો નથી. શું તમે જાતે ખર્ચ કે આવક ઉમેરવા માંગો છો?' 
+                  : 'No new bank or UPI transactions were detected in recent messages. Would you like to add one manually?'}
+              </p>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowNoTxModal(false);
+                  onOpenAddModal('expense');
+                }}
+                className="py-3 px-4 rounded-2xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold shadow-xs transition flex items-center justify-center gap-1.5 cursor-pointer active:scale-95"
+              >
+                <Plus className="w-4 h-4" />
+                <span>{isGu ? 'ખર્ચ ઉમેરો (-)' : 'Add Expense'}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setShowNoTxModal(false);
+                  onOpenAddModal('income');
+                }}
+                className="py-3 px-4 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-xs transition flex items-center justify-center gap-1.5 cursor-pointer active:scale-95"
+              >
+                <Plus className="w-4 h-4" />
+                <span>{isGu ? 'આવક ઉમેરો (+)' : 'Add Income'}</span>
+              </button>
+            </div>
+
             <button
-              onClick={() => {
-                setShowOfflinePrompt(false);
-                onOpenAddModal('expense');
-              }}
-              className="px-3.5 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs transition cursor-pointer shadow-xs"
+              type="button"
+              onClick={() => setShowNoTxModal(false)}
+              className="w-full py-2.5 text-xs font-semibold text-stone-500 hover:text-stone-800 transition cursor-pointer"
             >
-              {isGu ? 'હા (ખર્ચ ઉમેરો)' : 'Add Expense'}
-            </button>
-            <button
-              onClick={() => setShowOfflinePrompt(false)}
-              className="px-3 py-1.5 rounded-xl bg-white border border-amber-200 text-amber-800 font-semibold text-xs hover:bg-amber-100 transition cursor-pointer"
-            >
-              {isGu ? 'ના' : 'Dismiss'}
+              {isGu ? 'બંધ કરો' : 'Dismiss'}
             </button>
           </div>
         </div>
@@ -311,94 +436,194 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
         </div>
       )}
 
-      {/* PERIOD FILTER BAR (Month, Year, All) */}
-      <div
-        id="home-period-filter-bar"
-        className="bg-white rounded-2xl p-3 sm:p-3.5 border border-stone-200 shadow-2xs flex flex-wrap items-center justify-between gap-2.5"
-      >
-        <div className="flex items-center gap-1.5 bg-stone-100/80 p-1 rounded-xl">
-          <button
-            type="button"
-            onClick={() => setTimePeriod('month')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
-              timePeriod === 'month'
-                ? 'bg-white text-stone-900 shadow-2xs'
-                : 'text-stone-500 hover:text-stone-800'
-            }`}
-          >
-            {isGu ? 'આ મહિનો' : 'This Month'}
-          </button>
-          <button
-            type="button"
-            onClick={() => setTimePeriod('year')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
-              timePeriod === 'year'
-                ? 'bg-white text-stone-900 shadow-2xs'
-                : 'text-stone-500 hover:text-stone-800'
-            }`}
-          >
-            {isGu ? 'આ વર્ષ' : 'This Year'}
-          </button>
-          <button
-            type="button"
-            onClick={() => setTimePeriod('all')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
-              timePeriod === 'all'
-                ? 'bg-white text-stone-900 shadow-2xs'
-                : 'text-stone-500 hover:text-stone-800'
-            }`}
-          >
-            {isGu ? 'બધા વ્યવહાર' : 'All'}
-          </button>
-        </div>
+      {/* PERIOD & CATEGORY FILTER BAR */}
+      <div className="space-y-2">
+        <div
+          id="home-period-filter-bar"
+          className="bg-white rounded-2xl p-2.5 sm:p-3.5 border border-stone-200 shadow-2xs flex flex-wrap items-center justify-between gap-2.5"
+        >
+          {/* Time Period Tabs: Today (Day), Month, Year, All */}
+          <div className="flex items-center gap-1 bg-stone-100/80 p-1 rounded-xl">
+            <button
+              type="button"
+              onClick={() => setTimePeriod('today')}
+              className={`px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
+                timePeriod === 'today'
+                  ? 'bg-white text-stone-900 shadow-2xs'
+                  : 'text-stone-500 hover:text-stone-800'
+              }`}
+            >
+              {isGu ? 'આજે (દિવસ)' : 'Today'}
+            </button>
+            <button
+              type="button"
+              onClick={() => setTimePeriod('month')}
+              className={`px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
+                timePeriod === 'month'
+                  ? 'bg-white text-stone-900 shadow-2xs'
+                  : 'text-stone-500 hover:text-stone-800'
+              }`}
+            >
+              {isGu ? 'મહિનો' : 'Month'}
+            </button>
+            <button
+              type="button"
+              onClick={() => setTimePeriod('year')}
+              className={`px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
+                timePeriod === 'year'
+                  ? 'bg-white text-stone-900 shadow-2xs'
+                  : 'text-stone-500 hover:text-stone-800'
+              }`}
+            >
+              {isGu ? 'વર્ષ' : 'Year'}
+            </button>
+            <button
+              type="button"
+              onClick={() => setTimePeriod('all')}
+              className={`px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
+                timePeriod === 'all'
+                  ? 'bg-white text-stone-900 shadow-2xs'
+                  : 'text-stone-500 hover:text-stone-800'
+              }`}
+            >
+              {isGu ? 'બધા' : 'All'}
+            </button>
+          </div>
 
-        {/* Dynamic Selector or Net Balance indicator */}
-        <div className="flex items-center gap-2">
-          {timePeriod === 'month' && (
-            <div className="flex items-center gap-1 bg-stone-50 border border-stone-200 px-2 py-1 rounded-xl text-xs font-semibold text-stone-700">
-              <Calendar className="w-3.5 h-3.5 text-stone-400" />
-              <input
-                type="month"
-                value={filterMonth}
-                onChange={(e) => {
-                  if (e.target.value) setFilterMonth(e.target.value);
-                }}
-                className="bg-transparent border-none outline-none text-xs text-stone-800 font-medium cursor-pointer"
-              />
+          {/* Dynamic Selector or Net Balance indicator */}
+          <div className="flex items-center gap-2">
+            {timePeriod === 'month' && (
+              <div className="flex items-center gap-1 bg-stone-50 border border-stone-200 px-2 py-1 rounded-xl text-xs font-semibold text-stone-700">
+                <Calendar className="w-3.5 h-3.5 text-stone-400" />
+                <input
+                  type="month"
+                  value={filterMonth}
+                  onChange={(e) => {
+                    if (e.target.value) setFilterMonth(e.target.value);
+                  }}
+                  className="bg-transparent border-none outline-none text-xs text-stone-800 font-medium cursor-pointer"
+                />
+              </div>
+            )}
+
+            {timePeriod === 'year' && (
+              <div className="flex items-center gap-1 bg-stone-50 border border-stone-200 px-2.5 py-1 rounded-xl text-xs font-semibold text-stone-700">
+                <Calendar className="w-3.5 h-3.5 text-stone-400" />
+                <select
+                  value={filterYear}
+                  onChange={(e) => setFilterYear(e.target.value)}
+                  className="bg-transparent border-none outline-none text-xs text-stone-800 font-medium cursor-pointer"
+                >
+                  {[0, 1, 2, 3, 4].map((offset) => {
+                    const y = (new Date().getFullYear() - offset).toString();
+                    return (
+                      <option key={y} value={y}>
+                        {y}
+                      </option>
+                    );
+                  })}
+                </select>
+              </div>
+            )}
+
+            {/* Net Balance badge for selected period */}
+            <div className={`px-2.5 py-1 rounded-xl text-xs font-bold font-mono border ${
+              netBalance >= 0 
+                ? 'bg-emerald-50 text-emerald-800 border-emerald-200' 
+                : 'bg-rose-50 text-rose-800 border-rose-200'
+            }`}>
+              <span>{isGu ? 'બચત: ' : 'Net: '}</span>
+              <span>{currency}{netBalance.toLocaleString()}</span>
             </div>
-          )}
-
-          {timePeriod === 'year' && (
-            <div className="flex items-center gap-1 bg-stone-50 border border-stone-200 px-2.5 py-1 rounded-xl text-xs font-semibold text-stone-700">
-              <Calendar className="w-3.5 h-3.5 text-stone-400" />
-              <select
-                value={filterYear}
-                onChange={(e) => setFilterYear(e.target.value)}
-                className="bg-transparent border-none outline-none text-xs text-stone-800 font-medium cursor-pointer"
-              >
-                {[0, 1, 2, 3, 4].map((offset) => {
-                  const y = (new Date().getFullYear() - offset).toString();
-                  return (
-                    <option key={y} value={y}>
-                      {y}
-                    </option>
-                  );
-                })}
-              </select>
-            </div>
-          )}
-
-          {/* Net Balance badge for selected period */}
-          <div className={`px-2.5 py-1 rounded-xl text-xs font-bold font-mono border ${
-            netBalance >= 0 
-              ? 'bg-emerald-50 text-emerald-800 border-emerald-200' 
-              : 'bg-rose-50 text-rose-800 border-rose-200'
-          }`}>
-            <span>{isGu ? 'બચત: ' : 'Net: '}</span>
-            <span>{currency}{netBalance.toLocaleString()}</span>
           </div>
         </div>
+
+        {/* 2. CATEGORY QUICK-FILTER TABS (Requirement 4: Investment, Shopping, Bills, Transfer, Offline) */}
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
+          <button
+            type="button"
+            onClick={() => setCategoryFilter('all')}
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition cursor-pointer flex items-center gap-1.5 shrink-0 ${
+              categoryFilter === 'all'
+                ? 'bg-stone-800 text-white shadow-xs'
+                : 'bg-white text-stone-600 border border-stone-200 hover:bg-stone-50'
+            }`}
+          >
+            <span>{isGu ? 'બધા વ્યવહાર' : 'All'}</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setCategoryFilter('investment')}
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition cursor-pointer flex items-center gap-1.5 shrink-0 ${
+              categoryFilter === 'investment'
+                ? 'bg-indigo-700 text-white shadow-xs'
+                : 'bg-indigo-50 text-indigo-800 border border-indigo-200 hover:bg-indigo-100'
+            }`}
+          >
+            <PiggyBank className="w-3.5 h-3.5" />
+            <span>{isGu ? 'રોકાણ (NPS/SIP)' : 'Investment'}</span>
+            {totalInvestment > 0 && (
+              <span className="text-[10px] bg-white/20 px-1.5 py-0.2 rounded-md font-mono">
+                {currency}{totalInvestment.toLocaleString()}
+              </span>
+            )}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setCategoryFilter('shopping')}
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition cursor-pointer flex items-center gap-1.5 shrink-0 ${
+              categoryFilter === 'shopping'
+                ? 'bg-blue-700 text-white shadow-xs'
+                : 'bg-blue-50 text-blue-800 border border-blue-200 hover:bg-blue-100'
+            }`}
+          >
+            <ShoppingBag className="w-3.5 h-3.5" />
+            <span>{isGu ? 'શોપિંગ' : 'Shopping'}</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setCategoryFilter('bills')}
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition cursor-pointer flex items-center gap-1.5 shrink-0 ${
+              categoryFilter === 'bills'
+                ? 'bg-amber-700 text-white shadow-xs'
+                : 'bg-amber-50 text-amber-800 border border-amber-200 hover:bg-amber-100'
+            }`}
+          >
+            <Receipt className="w-3.5 h-3.5" />
+            <span>{isGu ? 'બિલ પેમેન્ટ' : 'Bills & Recharge'}</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setCategoryFilter('transfer')}
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition cursor-pointer flex items-center gap-1.5 shrink-0 ${
+              categoryFilter === 'transfer'
+                ? 'bg-teal-700 text-white shadow-xs'
+                : 'bg-teal-50 text-teal-800 border border-teal-200 hover:bg-teal-100'
+            }`}
+          >
+            <ArrowLeftRight className="w-3.5 h-3.5" />
+            <span>{isGu ? 'UPI ટ્રાન્સફર' : 'Transfers'}</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setCategoryFilter('offline')}
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition cursor-pointer flex items-center gap-1.5 shrink-0 ${
+              categoryFilter === 'offline'
+                ? 'bg-stone-700 text-white shadow-xs'
+                : 'bg-stone-100 text-stone-700 border border-stone-200 hover:bg-stone-200'
+            }`}
+          >
+            <Banknote className="w-3.5 h-3.5" />
+            <span>{isGu ? 'રોકડ / ઓફલાઇન' : 'Cash / Offline'}</span>
+          </button>
+        </div>
       </div>
+
 
       {/* TOP CARDS: Minimal Income & Expense with Inline Quick Add Buttons */}
       <section id="income-expense-cards-grid" className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">

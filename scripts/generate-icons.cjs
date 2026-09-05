@@ -2,8 +2,13 @@ const { execSync } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 
-const SRC_ICON = '/home/davesir/.gemini/antigravity-ide/brain/ac8d1944-4c0e-4ec4-aebb-85a4862c8af4/smart_app_icon_1788549677719.jpg';
 const ROOT = path.resolve(__dirname, '..');
+const SRC_ICON = path.join(ROOT, 'public/smart_app_icon_master.jpg');
+
+if (!fs.existsSync(SRC_ICON)) {
+  console.error('Source icon not found at', SRC_ICON);
+  process.exit(1);
+}
 
 const pwaSizes = [
   { file: path.join(ROOT, 'public/icon-512.png'), size: 512 },
@@ -23,7 +28,7 @@ const mipmaps = [
 console.log('Generating PWA icons...');
 for (const item of pwaSizes) {
   const cmd = `ffmpeg -y -i "${SRC_ICON}" -vf "scale=${item.size}:${item.size}" -update 1 "${item.file}"`;
-  execSync(cmd, { stdio: 'inherit' });
+  execSync(cmd, { stdio: 'ignore' });
 }
 
 console.log('Generating Android launcher mipmaps...');
@@ -35,19 +40,24 @@ for (const m of mipmaps) {
     fs.mkdirSync(targetFolder, { recursive: true });
   }
 
-  // ic_launcher.png
+  // 1. ic_launcher.png (Legacy square launcher icon)
   const launcherPath = path.join(targetFolder, 'ic_launcher.png');
   execSync(`ffmpeg -y -i "${SRC_ICON}" -vf "scale=${m.iconSize}:${m.iconSize}" -update 1 "${launcherPath}"`, { stdio: 'ignore' });
 
-  // ic_launcher_round.png
+  // 2. ic_launcher_round.png (Legacy circular launcher icon)
   const roundPath = path.join(targetFolder, 'ic_launcher_round.png');
   execSync(`ffmpeg -y -i "${SRC_ICON}" -vf "scale=${m.iconSize}:${m.iconSize}" -update 1 "${roundPath}"`, { stdio: 'ignore' });
 
-  // ic_launcher_foreground.png (scaled to adaptive foreground size with black background)
+  // 3. ic_launcher_foreground.png (Adaptive icon foreground with 72% safe-area scaling on emerald background #064E3B)
   const fgPath = path.join(targetFolder, 'ic_launcher_foreground.png');
-  execSync(`ffmpeg -y -i "${SRC_ICON}" -vf "scale=${m.fgSize}:${m.fgSize}" -update 1 "${fgPath}"`, { stdio: 'ignore' });
+  const innerSize = Math.round(m.fgSize * 0.72);
+  const padOffset = Math.round((m.fgSize - innerSize) / 2);
+  execSync(
+    `ffmpeg -y -i "${SRC_ICON}" -vf "scale=${innerSize}:${innerSize},pad=${m.fgSize}:${m.fgSize}:${padOffset}:${padOffset}:color=0x064E3B" -update 1 "${fgPath}"`,
+    { stdio: 'ignore' }
+  );
 
   console.log(`Generated ${m.dir} icons.`);
 }
 
-console.log('All icons successfully generated!');
+console.log('All icons successfully generated and synced!');

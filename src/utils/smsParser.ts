@@ -1,4 +1,5 @@
 import { TransactionType, Category } from '../types';
+import { isSpamOrNonTransaction, categorizeFinancialText, INVESTMENT_PATTERNS } from './financialKnowledgeBase';
 
 export interface ParsedExpenseMessage {
   type: TransactionType;
@@ -15,6 +16,7 @@ export interface ParsedExpenseMessage {
   evidence: string;
   evidenceSource: 'sms' | 'notification';
   confidence: number;
+  needsReview?: boolean;
 }
 
 export interface ParseOptions {
@@ -28,7 +30,6 @@ const MONTH_MAP: Record<string, string> = {
 };
 
 export function extractDateAndTime(text: string, timestamp?: number): { date: string; time: string } {
-  // Default from metadata timestamp if provided, else current date
   const fallbackDate = timestamp ? new Date(timestamp) : new Date();
   let date = fallbackDate.toISOString().split('T')[0];
   let time = fallbackDate.toTimeString().substring(0, 5);
@@ -89,6 +90,12 @@ export function extractBankOrSource(sender?: string, body?: string): string | un
   const cleanSender = (sender || '').toUpperCase();
   const cleanBody = (body || '').toUpperCase();
 
+  // Government & Pension bodies
+  if (cleanSender.includes('NPS') || cleanBody.includes('NPS') || cleanBody.includes('CRA-NSDL') || cleanBody.includes('PROTEAN')) return 'NPS (Protean CRA)';
+  if (cleanSender.includes('ZERODH') || cleanBody.includes('ZERODHA')) return 'Zerodha';
+  if (cleanSender.includes('GROWW') || cleanBody.includes('GROWW')) return 'Groww';
+  if (cleanSender.includes('ANGEL') || cleanBody.includes('ANGEL ONE')) return 'Angel One';
+
   if (cleanSender.includes('HDFC') || cleanBody.includes('HDFC BANK')) return 'HDFC Bank';
   if (cleanSender.includes('SBI') || cleanBody.includes('STATE BANK OF INDIA') || cleanBody.includes('SBI')) return 'SBI';
   if (cleanSender.includes('ICICI') || cleanBody.includes('ICICI BANK')) return 'ICICI Bank';
@@ -121,54 +128,18 @@ export function parseTransactionMessage(
   source: 'sms' | 'notification' = 'sms',
   options?: ParseOptions
 ): ParsedExpenseMessage | null {
-  if (!text || text.trim().length < 10) return null;
+  if (!text || text.trim().length < 8) return null;
 
   const clean = text.trim();
   const lower = clean.toLowerCase();
 
-  // 1. Determine Type (Debit / Credit)
-  const debitPatterns = [
-    /debited/i,
-    /debited with/i,
-    /debited by/i,
-    /paid rs/i,
-    /paid inr/i,
-    /spent/i,
-    /sent to/i,
-    /transferred to/i,
-    /purchase of/i,
-    /withdrawn/i,
-    /charged/i,
-    /\bdr\b/i,
-    /payment of/i,
-    /txn of/i,
-  ];
-
-  const creditPatterns = [
-    /credited/i,
-    /credited with/i,
-    /credited by/i,
-    /received from/i,
-    /refund of/i,
-    /deposited/i,
-    /salary credited/i,
-    /\bcr\b/i,
-    /money received/i,
-  ];
-
-  let type: TransactionType | null = null;
-
-  if (debitPatterns.some((p) => p.test(lower))) {
-    type = 'expense';
-  } else if (creditPatterns.some((p) => p.test(lower))) {
-    type = 'income';
+  // 1. Strict Spam, Promotional Ads & OTP Filter
+  if (isSpamOrNonTransaction(clean)) {
+    return null;
   }
 
-  // If message doesn't indicate money flow, skip
-  if (!type) return null;
-
-  // 2. Extract Amount
-  // Matches Rs. 500, Rs 500.00, INR 1,200.50, ₹450, $25.00, 500.00 INR
+  // 2. Extract Amount first to ensure it's a monetary message
+  // Matches: Rs. 500, Rs 500.00, INR 1,200.50, ₹450, $25.00, 500.00 INR
   const amountRegex = /(?:rs\.?|inr|₹|\$|€|£)\s*([\d,]+(?:\.\d{1,2})?)|([\d,]+(?:\.\d{1,2})?)\s*(?:rs\.?|inr)/i;
   const matchAmount = clean.match(amountRegex);
 
@@ -182,19 +153,66 @@ export function parseTransactionMessage(
     return null;
   }
 
-  // 3. Extract Payment Mode (UPI, Card, NetBanking, ATM)
+  // 3. Determine Flow Type (Debit / Credit)
+  const debitPatterns = [
+    /\bdebited\b/i,
+    /\bpaid\b/i,
+    /\bspent\b/i,
+    /\bsent to\b/i,
+    /\btransferred to\b/i,
+    /\bpurchase of\b/i,
+    /\bwithdrawn\b/i,
+    /\bcharged\b/i,
+    /\bdr\b/i,
+    /\bpayment of\b/i,
+    /\btxn of\b/i,
+  ];
+
+  const creditPatterns = [
+    /\bcredited\b/i,
+    /\breceived from\b/i,
+    /\brefund of\b/i,
+    /\bdeposited\b/i,
+    /\bsalary credited\b/i,
+    /\bcr\b/i,
+    /\bmoney received\b/i,
+  ];
+
+  let rawType: TransactionType | null = null;
+  if (debitPatterns.some((p) => p.test(lower))) {
+    rawType = 'expense';
+  } else if (creditPatterns.some((p) => p.test(lower))) {
+    rawType = 'income';
+  }
+
+  // Special NPS & Investment Handling (Requirement 3 & 4):
+  // When NPS credits contribution to PRAN account, it is an INVESTMENT OUTFLOW from the user's view, NOT income!
+  const isNpsContribution = INVESTMENT_PATTERNS.nps.some((p) => p.test(lower)) && !lower.includes('redemption');
+  const isSipContribution = INVESTMENT_PATTERNS.mutualFunds.some((p) => p.test(lower)) && !lower.includes('redemption') && !lower.includes('dividend');
+
+  let type: TransactionType;
+  if (isNpsContribution || isSipContribution) {
+    type = 'expense'; // Investment outflow
+  } else if (rawType) {
+    type = rawType;
+  } else {
+    // If neither debit nor credit pattern matched, skip
+    return null;
+  }
+
+  // 4. Extract Payment Mode (UPI, Card, NetBanking, ATM)
   let paymentMode = 'UPI';
-  if (/upi|gpay|phonepe|paytm|bhim/i.test(lower)) {
+  if (/upi|gpay|phonepe|paytm|bhim|vpa/i.test(lower)) {
     paymentMode = 'UPI';
-  } else if (/card|credit card|debit card|visa|mastercard|rupay/i.test(lower)) {
+  } else if (/credit card|debit card|visa|mastercard|rupay|card ending/i.test(lower)) {
     paymentMode = 'Card';
   } else if (/atm|cash/i.test(lower)) {
     paymentMode = 'ATM / Cash';
-  } else if (/net banking|neft|rtgs|imps/i.test(lower)) {
+  } else if (/net banking|neft|rtgs|imps|fund transfer/i.test(lower)) {
     paymentMode = 'Bank Transfer';
   }
 
-  // 4. Extract Merchant / Vendor / Recipient
+  // 5. Extract Merchant / Vendor / Recipient
   let vendorOrPerson = '';
   // Match "to [Merchant]", "at [Merchant]", "towards [Merchant]", "from [Sender]"
   const merchantMatch = clean.match(
@@ -202,45 +220,41 @@ export function parseTransactionMessage(
   );
   if (merchantMatch && merchantMatch[1]) {
     const candidate = merchantMatch[1].trim();
-    if (!/^(the|a|an|account|your|bank|rs|inr)$/i.test(candidate)) {
+    if (!/^(the|a|an|account|your|bank|rs|inr|pran)$/i.test(candidate)) {
       vendorOrPerson = candidate;
     }
   }
 
-  // 5. Extract Reference / UTR Number
+  // 6. Extract Reference / UTR Number
   let referenceNumber: string | undefined;
-  const refMatch = clean.match(/(?:ref|utr|txn|rrn|txn id|ref no)[\s.:#]*([A-Za-z0-9]{6,16})/i);
+  const refMatch = clean.match(/(?:ref|utr|txn|rrn|txn id|ref no|pran)[\s.:#]*([A-Za-z0-9]{6,16})/i);
   if (refMatch && refMatch[1]) {
     referenceNumber = refMatch[1];
   }
 
-  // 6. Extract Account Information (e.g. A/c XX1234 or Card ending 5678)
+  // 7. Extract Account Information (e.g. A/c XX1234 or Card ending 5678)
   let accountInfo: string | undefined;
   const accMatch = clean.match(/(?:a\/c|account|card)[\s*xX-]*(\d{4})/i);
   if (accMatch && accMatch[1]) {
     accountInfo = `A/c *${accMatch[1]}`;
   }
 
-  // 7. Title & Category Guessing
-  const title = vendorOrPerson ? `${vendorOrPerson}` : type === 'income' ? 'Income Received' : 'Expense Payment';
+  // 8. Categorization via Comprehensive Financial Knowledge Base
+  const categoryResult = categorizeFinancialText(clean, options?.sender, type);
+  let category = categoryResult.category;
 
-  let category = type === 'income' ? 'Salary' : 'Shopping';
-  const foodKeywords = ['swiggy', 'zomato', 'restaurant', 'cafe', 'mcdonald', 'domino', 'food', 'bakery', 'tea'];
-  const groceryKeywords = ['blinkit', 'zepto', 'instamart', 'supermarket', 'grocery', 'mart', 'dmart', 'kirana'];
-  const fuelKeywords = ['petrol', 'fuel', 'hpcl', 'bpcl', 'iocl', 'cng', 'diesel'];
-  const travelKeywords = ['uber', 'ola', 'rapido', 'irctc', 'flight', 'metro', 'bus'];
-  const utilityKeywords = ['electricity', 'water', 'broadband', 'airtel', 'jio', 'recharge', 'bill'];
-
-  if (foodKeywords.some((k) => lower.includes(k))) category = 'Food & Dining';
-  else if (groceryKeywords.some((k) => lower.includes(k))) category = 'Groceries';
-  else if (fuelKeywords.some((k) => lower.includes(k))) category = 'Fuel & Transport';
-  else if (travelKeywords.some((k) => lower.includes(k))) category = 'Travel';
-  else if (utilityKeywords.some((k) => lower.includes(k))) category = 'Bills & Utilities';
-
-  // Match with existing categories if provided
+  // Match with existing categories in app if provided
   if (categories.length > 0) {
     const exact = categories.find((c) => c.name.toLowerCase() === category.toLowerCase());
     if (exact) category = exact.name;
+  }
+
+  // 9. Descriptive Title
+  let title = vendorOrPerson ? vendorOrPerson : type === 'income' ? 'Income Received' : 'Expense Payment';
+  if (isNpsContribution) {
+    title = 'NPS Contribution (રોકાણ)';
+  } else if (category === 'Transfer') {
+    title = vendorOrPerson ? `UPI: ${vendorOrPerson}` : 'UPI Transfer';
   }
 
   // Extract transaction date and time from SMS text or metadata timestamp
@@ -263,6 +277,41 @@ export function parseTransactionMessage(
     bankOrSource,
     evidence: clean,
     evidenceSource: source,
-    confidence: 0.95,
+    confidence: categoryResult.confidence,
+    needsReview: categoryResult.needsReview || categoryResult.confidence < 0.85,
   };
+}
+
+/**
+ * Parse an array of multiple messages (threads) and return unique valid transactions.
+ */
+export function parseMultipleMessages(
+  messages: Array<{ body: string; address?: string; timestamp?: number }>,
+  categories: Category[] = [],
+  source: 'sms' | 'notification' = 'sms'
+): ParsedExpenseMessage[] {
+  const results: ParsedExpenseMessage[] = [];
+  const seenHashes = new Set<string>();
+
+  for (const msg of messages) {
+    if (!msg.body) continue;
+    const parsed = parseTransactionMessage(msg.body, categories, source, {
+      sender: msg.address,
+      timestamp: msg.timestamp,
+    });
+
+    if (parsed) {
+      // Deduplicate by amount + date + approximate time or reference
+      const hash = parsed.referenceNumber 
+        ? `${parsed.amount}_${parsed.referenceNumber}`
+        : `${parsed.amount}_${parsed.date}_${parsed.title}`;
+
+      if (!seenHashes.has(hash)) {
+        seenHashes.add(hash);
+        results.push(parsed);
+      }
+    }
+  }
+
+  return results;
 }

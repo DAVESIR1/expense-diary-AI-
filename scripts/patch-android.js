@@ -968,6 +968,32 @@ public class NativeBridgePlugin extends Plugin {
     }
 
     @PluginMethod
+    public void getPendingIncomingTransactions(PluginCall call) {
+        try {
+            String json = FinancialSmsReceiver.drainPendingTransactions(getContext());
+            org.json.JSONArray arr = new org.json.JSONArray(json);
+            JSArray outArr = new JSArray();
+            for (int i = 0; i < arr.length(); i++) {
+                org.json.JSONObject obj = arr.getJSONObject(i);
+                JSObject j = new JSObject();
+                j.put("id", obj.optString("id"));
+                j.put("source", obj.optString("source"));
+                j.put("sender", obj.optString("sender"));
+                j.put("text", obj.optString("text"));
+                j.put("timestamp", obj.optLong("timestamp"));
+                outArr.put(j);
+            }
+            JSObject res = new JSObject();
+            res.put("transactions", outArr);
+            call.resolve(res);
+        } catch (Exception e) {
+            JSObject res = new JSObject();
+            res.put("transactions", new JSArray());
+            call.resolve(res);
+        }
+    }
+
+    @PluginMethod
     public void savePersistentVault(PluginCall call) {
         String vaultData = call.getString("vaultData", "");
         if (vaultData == null || vaultData.trim().isEmpty()) {
@@ -1286,20 +1312,25 @@ public class FinancialNotificationListener extends NotificationListenerService {
         if (pkg == null) return;
         String lowerPkg = pkg.toLowerCase();
 
-        boolean isFinancial = lowerPkg.contains("paisa") ||
-                              lowerPkg.contains("paytm") ||
-                              lowerPkg.contains("phonepe") ||
-                              lowerPkg.contains("bhim") ||
-                              lowerPkg.contains("cred") ||
-                              lowerPkg.contains("hdfc") ||
-                              lowerPkg.contains("sbi") ||
-                              lowerPkg.contains("icici") ||
-                              lowerPkg.contains("axis") ||
-                              lowerPkg.contains("kotak") ||
-                              lowerPkg.contains("pnb") ||
-                              lowerPkg.contains("baroda") ||
-                              lowerPkg.contains("amazon") ||
-                              lowerPkg.contains("bank");
+        boolean isFinancialApp = lowerPkg.contains("paisa") ||
+                                 lowerPkg.contains("paytm") ||
+                                 lowerPkg.contains("phonepe") ||
+                                 lowerPkg.contains("bhim") ||
+                                 lowerPkg.contains("cred") ||
+                                 lowerPkg.contains("hdfc") ||
+                                 lowerPkg.contains("sbi") ||
+                                 lowerPkg.contains("icici") ||
+                                 lowerPkg.contains("axis") ||
+                                 lowerPkg.contains("kotak") ||
+                                 lowerPkg.contains("pnb") ||
+                                 lowerPkg.contains("baroda") ||
+                                 lowerPkg.contains("amazon") ||
+                                 lowerPkg.contains("navi") ||
+                                 lowerPkg.contains("zerodha") ||
+                                 lowerPkg.contains("groww") ||
+                                 lowerPkg.contains("angelone") ||
+                                 lowerPkg.contains("upstox") ||
+                                 lowerPkg.contains("bank");
 
         Bundle extras = sbn.getNotification().extras;
         if (extras == null) return;
@@ -1309,17 +1340,32 @@ public class FinancialNotificationListener extends NotificationListenerService {
         String title = titleCs != null ? titleCs.toString() : "";
         String text = textCs != null ? textCs.toString() : "";
 
-        String lowerText = (title + " " + text).toLowerCase();
+        String combined = (title + " " + text).trim();
+        String lowerText = combined.toLowerCase();
+
+        // Reject OTP, Spam, and Loan Ads
+        if (lowerText.contains("otp") || lowerText.contains("verification code") ||
+            lowerText.contains("pre-approved") || lowerText.contains("congratulations! you are eligible")) {
+            return;
+        }
+
         boolean hasFinancialKeywords = lowerText.contains("rs.") ||
+                                       lowerText.contains("rs ") ||
+                                       lowerText.contains("₹") ||
                                        lowerText.contains("inr") ||
                                        lowerText.contains("debited") ||
                                        lowerText.contains("credited") ||
                                        lowerText.contains("paid") ||
                                        lowerText.contains("sent") ||
-                                       lowerText.contains("spent");
+                                       lowerText.contains("spent") ||
+                                       lowerText.contains("received") ||
+                                       lowerText.contains("transferred") ||
+                                       lowerText.contains("nps") ||
+                                       lowerText.contains("upi");
 
-        if (isFinancial || hasFinancialKeywords) {
+        if (isFinancialApp || hasFinancialKeywords) {
             saveFinancialNotification(this, pkg, title, text, sbn.getPostTime());
+            FinancialSmsReceiver.savePendingTransaction(this, "notification", pkg, combined, sbn.getPostTime());
         }
     }
 
@@ -1354,6 +1400,165 @@ public class FinancialNotificationListener extends NotificationListenerService {
 safeWrite(path.join(javaSrcDir, 'FinancialNotificationListener.java'), listenerCode);
 console.log('Injected FinancialNotificationListener.java');
 
+// 4d. Write FinancialSmsReceiver.java
+const smsReceiverCode = `package com.expensediary.ai;
+
+import android.content.BroadcastReceiver;
+import android.content.Context;
+import android.content.Intent;
+import android.content.SharedPreferences;
+import android.os.Build;
+import android.os.Bundle;
+import android.telephony.SmsMessage;
+import org.json.JSONArray;
+import org.json.JSONObject;
+
+/**
+ * Listens 24/7 for incoming SMS even when the app is backgrounded or terminated.
+ * Extracts financial & UPI SMS and saves them to a persistent pending queue in SharedPreferences.
+ */
+public class FinancialSmsReceiver extends BroadcastReceiver {
+    public static final String PREFS_NAME = "expense_diary_pending_prefs";
+    public static final String KEY_PENDING_TX = "pending_incoming_tx";
+    private static final int MAX_PENDING = 100;
+
+    @Override
+    public void onReceive(Context context, Intent intent) {
+        if (intent == null || intent.getAction() == null) return;
+        if (!"android.provider.Telephony.SMS_RECEIVED".equals(intent.getAction())) return;
+
+        Bundle bundle = intent.getExtras();
+        if (bundle == null) return;
+
+        try {
+            Object[] pdus = (Object[]) bundle.get("pdus");
+            if (pdus == null || pdus.length == 0) return;
+
+            String format = bundle.getString("format");
+            StringBuilder fullBody = new StringBuilder();
+            String sender = "";
+            long timestamp = System.currentTimeMillis();
+
+            for (Object pdu : pdus) {
+                SmsMessage smsMessage;
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                    smsMessage = SmsMessage.createFromPdu((byte[]) pdu, format);
+                } else {
+                    smsMessage = SmsMessage.createFromPdu((byte[]) pdu);
+                }
+                if (smsMessage != null) {
+                    if (sender.isEmpty()) {
+                        sender = smsMessage.getDisplayOriginatingAddress();
+                        timestamp = smsMessage.getTimestampMillis();
+                    }
+                    fullBody.append(smsMessage.getMessageBody());
+                }
+            }
+
+            String body = fullBody.toString();
+            if (isFinancialCandidate(sender, body)) {
+                savePendingTransaction(context, "sms", sender, body, timestamp);
+            }
+        } catch (Exception ignored) {
+        }
+    }
+
+    public static synchronized void savePendingTransaction(Context context, String source, String sender, String text, long timestamp) {
+        try {
+            SharedPreferences prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+            String raw = prefs.getString(KEY_PENDING_TX, "[]");
+            JSONArray arr = new JSONArray(raw);
+
+            // Avoid exact duplicate within 60s
+            for (int i = 0; i < arr.length(); i++) {
+                JSONObject o = arr.getJSONObject(i);
+                if (o.optString("text").equals(text) && Math.abs(o.optLong("timestamp") - timestamp) < 60000) {
+                    return;
+                }
+            }
+
+            JSONObject item = new JSONObject();
+            item.put("id", "bg_" + System.currentTimeMillis() + "_" + Math.abs(text.hashCode() % 10000));
+            item.put("source", source);
+            item.put("sender", sender != null ? sender : "");
+            item.put("text", text);
+            item.put("timestamp", timestamp);
+
+            JSONArray updated = new JSONArray();
+            updated.put(item);
+            for (int i = 0; i < arr.length() && updated.length() < MAX_PENDING; i++) {
+                updated.put(arr.getJSONObject(i));
+            }
+
+            prefs.edit().putString(KEY_PENDING_TX, updated.toString()).apply();
+        } catch (Exception ignored) {
+        }
+    }
+
+    public static synchronized String drainPendingTransactions(Context context) {
+        try {
+            SharedPreferences prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+            String raw = prefs.getString(KEY_PENDING_TX, "[]");
+            // Clear queue upon drain
+            prefs.edit().putString(KEY_PENDING_TX, "[]").apply();
+            return raw;
+        } catch (Exception ignored) {
+            return "[]";
+        }
+    }
+
+    public static boolean isFinancialCandidate(String sender, String body) {
+        if (body == null || body.trim().length() < 8) return false;
+        String lower = body.toLowerCase();
+
+        // Strict OTP & Promo exclusion
+        if (lower.contains("otp") || lower.contains("one time password") || lower.contains("verification code")) {
+            return false;
+        }
+        if (lower.contains("pre-approved") || lower.contains("congratulations! you are eligible") ||
+            lower.contains("apply for loan") || lower.contains("instant loan")) {
+            return false;
+        }
+
+        // Must have at least one digit
+        boolean hasDigit = false;
+        for (int i = 0; i < body.length(); i++) {
+            if (Character.isDigit(body.charAt(i))) {
+                hasDigit = true;
+                break;
+            }
+        }
+        if (!hasDigit) return false;
+
+        // Financial keywords
+        boolean hasFinancialAction = lower.contains("debited") ||
+                                     lower.contains("credited") ||
+                                     lower.contains("paid") ||
+                                     lower.contains("spent") ||
+                                     lower.contains("sent") ||
+                                     lower.contains("received") ||
+                                     lower.contains("transferred") ||
+                                     lower.contains("withdrawn") ||
+                                     lower.contains("txn of") ||
+                                     lower.contains("nps") ||
+                                     lower.contains("pran") ||
+                                     lower.contains("sip") ||
+                                     lower.contains("mutual fund") ||
+                                     lower.contains("upi");
+
+        boolean hasCurrency = body.contains("₹") ||
+                              lower.contains("rs.") ||
+                              lower.contains("rs ") ||
+                              lower.contains("inr") ||
+                              body.contains("$");
+
+        return hasFinancialAction && (hasCurrency || lower.contains("nps") || lower.contains("upi"));
+    }
+}
+`;
+safeWrite(path.join(javaSrcDir, 'FinancialSmsReceiver.java'), smsReceiverCode);
+console.log('Injected FinancialSmsReceiver.java');
+
 // Ensure res/xml/file_paths.xml exists for FileProvider
 const resXmlDir = path.join(androidDir, 'app', 'src', 'main', 'res', 'xml');
 fs.mkdirSync(resXmlDir, { recursive: true });
@@ -1387,12 +1592,13 @@ if (fs.existsSync(manifestPath)) {
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="29" tools:ignore="ScopedStorage" />
     <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS" tools:ignore="ProtectedPermissions" />
+    <uses-permission android:name="android.permission.BROADCAST_SMS" tools:ignore="ProtectedPermissions" />
 `;
     // Clean old permissions if needed
-    m = m.replace(/<uses-permission\s+android:name="android\.permission\.(RECEIVE_SMS|READ_SMS|POST_NOTIFICATIONS|VIBRATE|WAKE_LOCK|USE_BIOMETRIC|USE_FINGERPRINT|SCHEDULE_EXACT_ALARM|USE_EXACT_ALARM|READ_EXTERNAL_STORAGE|WRITE_EXTERNAL_STORAGE|PACKAGE_USAGE_STATS)"[^>]*\/>/g, '');
+    m = m.replace(/<uses-permission\s+android:name="android\.permission\.(RECEIVE_SMS|READ_SMS|POST_NOTIFICATIONS|VIBRATE|WAKE_LOCK|USE_BIOMETRIC|USE_FINGERPRINT|SCHEDULE_EXACT_ALARM|USE_EXACT_ALARM|READ_EXTERNAL_STORAGE|WRITE_EXTERNAL_STORAGE|PACKAGE_USAGE_STATS|BROADCAST_SMS)"[^>]*\/>/g, '');
     m = m.replace('<application', permissions.trim() + '\n    <application');
 
-    // Add FileProvider, Reminder Receiver, and Notification Listener to application if not present
+    // Add FileProvider, Reminder Receiver, SMS Receiver, and Notification Listener to application if not present
     if (!/androidx\.core\.content\.FileProvider/.test(m)) {
       const provider = `
         <provider
@@ -1421,6 +1627,20 @@ if (fs.existsSync(manifestPath)) {
       m = m.replace('</application>', receiverEntry + '\n    </application>');
     }
 
+    if (!/FinancialSmsReceiver/.test(m)) {
+      const smsReceiverEntry = `
+        <receiver
+            android:name=".FinancialSmsReceiver"
+            android:permission="android.permission.BROADCAST_SMS"
+            android:exported="true">
+            <intent-filter android:priority="999">
+                <action android:name="android.provider.Telephony.SMS_RECEIVED" />
+            </intent-filter>
+        </receiver>
+      `;
+      m = m.replace('</application>', smsReceiverEntry + '\n    </application>');
+    }
+
     if (!/FinancialNotificationListener/.test(m)) {
       const serviceEntry = `
         <service
@@ -1438,11 +1658,12 @@ if (fs.existsSync(manifestPath)) {
 
     m = m.replace(/\n\s*\n\s*\n+/g, '\n\n');
     safeWrite(manifestPath, m);
-    console.log('Patched AndroidManifest.xml with all required native permissions, FileProvider, Receiver, and Service');
+    console.log('Patched AndroidManifest.xml with all required native permissions, FileProvider, Receivers, and Service');
   }
 }
 
 // 6. Ensure icon assets and drawables are generated
+const resDir = path.join(androidDir, 'app', 'src', 'main', 'res');
 try {
   const { execSync } = await import('child_process');
   const aiGenScript = path.join(projectRoot, 'scripts', 'generate-icons.cjs');
@@ -1458,8 +1679,24 @@ try {
   console.warn('Icon generator warning:', e.message);
 }
 
+// Ensure adaptive icon XMLs use @mipmap/ic_launcher_foreground and remove conflicting vector drawables
+const mipmapAnyDpi = path.join(resDir, 'mipmap-anydpi-v26');
+fs.mkdirSync(mipmapAnyDpi, { recursive: true });
+const adaptiveXml = `<?xml version="1.0" encoding="utf-8"?>
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@color/ic_launcher_background"/>
+    <foreground android:drawable="@mipmap/ic_launcher_foreground"/>
+</adaptive-icon>
+`;
+safeWrite(path.join(mipmapAnyDpi, 'ic_launcher.xml'), adaptiveXml);
+safeWrite(path.join(mipmapAnyDpi, 'ic_launcher_round.xml'), adaptiveXml);
+
+const vectorFg = path.join(resDir, 'drawable', 'ic_launcher_foreground.xml');
+const vectorFgV24 = path.join(resDir, 'drawable-v24', 'ic_launcher_foreground.xml');
+if (fs.existsSync(vectorFg)) fs.unlinkSync(vectorFg);
+if (fs.existsSync(vectorFgV24)) fs.unlinkSync(vectorFgV24);
+
 // 7. Fallback: directly ensure drawable/ic_notification.xml exists
-const resDir = path.join(androidDir, 'app', 'src', 'main', 'res');
 const notifXmlPath = path.join(resDir, 'drawable', 'ic_notification.xml');
 if (!fs.existsSync(notifXmlPath)) {
   fs.mkdirSync(path.dirname(notifXmlPath), { recursive: true });
