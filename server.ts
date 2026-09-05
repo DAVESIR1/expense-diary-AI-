@@ -38,26 +38,28 @@ app.use((req: Request, res: Response, next) => {
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
   if (req.method === 'OPTIONS') {
-    return res.sendStatus(204);
+    res.sendStatus(204);
+    return;
   }
 
   // Optional bearer-token protection for AI endpoints.
   if (apiToken && req.path.startsWith('/api/gemini/')) {
     const auth = req.headers.authorization || '';
     if (auth !== `Bearer ${apiToken}`) {
-      return res.status(401).json({ error: 'Unauthorized: missing or invalid API token.' });
+      res.status(401).json({ error: 'Unauthorized: missing or invalid API token.' });
+      return;
     }
   }
-  next();
+  return next();
 });
 
 // Explicit PWA manifest & service worker routes with strict content-types
-app.get('/manifest.json', (req: Request, res: Response) => {
+app.get('/manifest.json', (_req: Request, res: Response) => {
   res.setHeader('Content-Type', 'application/manifest+json; charset=utf-8');
   res.sendFile(path.join(process.cwd(), 'public', 'manifest.json'));
 });
 
-app.get('/sw.js', (req: Request, res: Response) => {
+app.get('/sw.js', (_req: Request, res: Response) => {
   res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
   res.setHeader('Service-Worker-Allowed', '/');
   res.sendFile(path.join(process.cwd(), 'public', 'sw.js'));
@@ -88,7 +90,7 @@ function getGeminiClient(): GoogleGenAI | null {
 }
 
 // Health check
-app.get('/api/health', (req: Request, res: Response) => {
+app.get('/api/health', (_req: Request, res: Response) => {
   res.json({
     status: 'ok',
     hasGeminiKey: Boolean(process.env.GEMINI_API_KEY),
@@ -157,7 +159,7 @@ Output MUST follow the JSON schema.
   const lower = text.toLowerCase();
   const isIncome = /credited|received|deposit|salary|refund|refunded|જમા|આવક|મળ્યા|પગાર/.test(lower);
   const isExpense = /debited|paid|spent|sent|deducted|withdrawn|ખર્ચ|ચૂકવ્યા|ઉપાડ્યા/.test(lower);
-  
+  void isExpense;
   // Extract amount
   const amountMatch = text.match(/(?:rs\.?|inr|₹|\$|€)\s*([\d,]+(?:\.\d{1,2})?)/i) ||
                       text.match(/([\d,]+(?:\.\d{1,2})?)\s*(?:rs\.?|inr|₹|રૂપિયા)/i) ||
@@ -373,7 +375,7 @@ async function startServer() {
   } else {
     const distPath = path.join(process.cwd(), 'dist');
     app.use(express.static(distPath));
-    app.get('*', (req: Request, res: Response) => {
+    app.get('*', (_req: Request, res: Response) => {
       res.sendFile(path.join(distPath, 'index.html'));
     });
   }

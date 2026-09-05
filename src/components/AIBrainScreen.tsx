@@ -11,7 +11,6 @@ import {
   Check, 
   CheckCircle2, 
   RefreshCw,
-  HelpCircle,
   Plus
 } from 'lucide-react';
 import { Transaction, Category, PendingAIMessage, AppActivityAlert } from '../types';
@@ -32,12 +31,8 @@ interface AIBrainScreenProps {
 
 export const AIBrainScreen: React.FC<AIBrainScreenProps> = ({
   transactions,
-  categories,
   onAddTransaction,
-  pendingAiMessages,
   onAddPendingAiMessage,
-  onConfirmAiMessage,
-  t,
   currency,
 }) => {
   // 1. Live SMS / Notification parser state

@@ -21,21 +21,44 @@ if (!fs.existsSync(androidDir)) {
   process.exit(1);
 }
 
-// 1. Copy persistent release and debug keystores for consistent signing across all builds
+// 1. Copy persistent release and debug keystores for consistent signing across all builds.
+//    On CI the `signing/` folder is gitignored and absent — generate a throwaway
+//    keystore via keytool so the release build still signs (CI artifacts aren't
+//    published to Play, they are diagnostic). Local builds always win the copy above.
 const sourceReleaseKeystore = path.join(projectRoot, 'signing', 'release.keystore');
 const sourceDebugKeystore = path.join(projectRoot, 'signing', 'debug.keystore');
 const destReleaseKeystore = path.join(androidDir, 'app', 'release.keystore');
 const destDebugKeystore = path.join(androidDir, 'app', 'debug.keystore');
 
+function generateKeystore(dest, alias, password) {
+  const { execSync } = require('child_process');
+  try {
+    fs.mkdirSync(path.dirname(dest), { recursive: true });
+    const dname = 'CN=Expense Diary AI, OU=Development, O=ExpenseDiary, L=Unknown, S=Unknown, C=IN';
+    const cmd = `keytool -genkeypair -v -keystore "${dest}" -alias ${alias} -keyalg RSA -keysize 2048 -validity 10000 -storepass ${password} -keypass ${password} -dname "${dname}" -storetype JKS`;
+    execSync(cmd, { stdio: 'ignore' });
+    console.log(`Generated ${path.relative(projectRoot, dest)} via keytool`);
+    return true;
+  } catch (e) {
+    console.warn(`Warning: could not generate keystore at ${dest}:`, e?.message || e);
+    return false;
+  }
+}
+
 if (fs.existsSync(sourceReleaseKeystore)) {
   fs.mkdirSync(path.dirname(destReleaseKeystore), { recursive: true });
   fs.copyFileSync(sourceReleaseKeystore, destReleaseKeystore);
   console.log('Copied persistent signing/release.keystore to android/app/release.keystore');
+} else if (!fs.existsSync(destReleaseKeystore)) {
+  // CI fallback: sign with a freshly generated keystore so the build succeeds.
+  generateKeystore(destReleaseKeystore, 'expensediary', 'expensediary');
 }
 if (fs.existsSync(sourceDebugKeystore)) {
   fs.mkdirSync(path.dirname(destDebugKeystore), { recursive: true });
   fs.copyFileSync(sourceDebugKeystore, destDebugKeystore);
   console.log('Copied persistent signing/debug.keystore to android/app/debug.keystore');
+} else if (!fs.existsSync(destDebugKeystore)) {
+  generateKeystore(destDebugKeystore, 'expensediary', 'expensediary');
 }
 
 // 2. Patch variables.gradle to set compileSdkVersion/targetSdkVersion

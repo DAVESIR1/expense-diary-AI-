@@ -7,14 +7,9 @@ import {
   Trash2, 
   CheckCircle2, 
   AlertCircle,
-  Clock,
-  Building2,
-  Phone,
   Wallet,
-  RefreshCw,
   X,
   ShieldCheck,
-  Image as ImageIcon,
   Edit3,
   Calendar,
   ChevronDown,
@@ -23,7 +18,6 @@ import {
   Receipt,
   ArrowLeftRight,
   Banknote,
-  Sparkles,
   Mail,
   MessageSquare
 } from 'lucide-react';
@@ -69,10 +63,8 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
   const [tempCategory, setTempCategory] = useState<string>('');
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [showNoTxModal, setShowNoTxModal] = useState(false);
-  const [showOfflinePrompt, setShowOfflinePrompt] = useState(false);
   const [touchStartY, setTouchStartY] = useState(0);
   const [pullDistance, setPullDistance] = useState(0);
-  const [previewEvidenceTx, setPreviewEvidenceTx] = useState<Transaction | null>(null);
   const [selectedTxForDetail, setSelectedTxForDetail] = useState<Transaction | null>(null);
 
   // Time Period Filter: 'today' | 'month' (default) | 'year' | 'all'
@@ -190,7 +182,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
     .reduce((sum, item) => sum + item.amount, 0);
 
   const emailInvCount = categoryPeriodTransactions.filter(
-    (tx) => tx.source === 'email' || tx.id.startsWith('email-') || (tx.evidenceSender && tx.evidenceSender.includes('@'))
+    (tx) => tx.id.startsWith('email-') || (tx.evidenceSender && tx.evidenceSender.includes('@'))
   ).length;
   const smsInvCount = categoryPeriodTransactions.length - emailInvCount;
 
@@ -1086,7 +1078,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                           {item.title}
                         </h4>
                         {/* Source Tag: Email or SMS or Proof */}
-                        {item.source === 'email' || item.id.startsWith('email-') || (item.evidenceSender && item.evidenceSender.includes('@')) ? (
+                        {item.id.startsWith('email-') || (item.evidenceSender && item.evidenceSender.includes('@')) ? (
                           <span
                             className="inline-flex items-center gap-1 text-[10px] font-bold bg-amber-50 text-amber-900 border border-amber-200 px-1.5 py-0.5 rounded"
                             title={isGu ? 'ઈમેલ દ્વારા પ્રમાણિત વ્યવહાર' : 'Verified via Financial Email'}
@@ -1124,10 +1116,10 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                         <span>•</span>
                         <span>{item.date}</span>
                         {item.time && <span>{item.time}</span>}
-                        {item.accountInfo && (
+                        {item.referenceNumber && (
                           <>
                             <span>•</span>
-                            <span className="text-indigo-700 font-semibold">{item.accountInfo}</span>
+                            <span className="text-indigo-700 font-semibold">{item.referenceNumber}</span>
                           </>
                         )}
                         {item.paymentMode && (
@@ -1295,7 +1287,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
 
             {/* Banking / SMS / Email Evidence Section */}
             {(selectedTxForDetail.evidence || selectedTxForDetail.evidenceSender || selectedTxForDetail.referenceNumber) && (() => {
-              const isEmailSource = selectedTxForDetail.source === 'email' || selectedTxForDetail.id.startsWith('email-') || (selectedTxForDetail.evidenceSender && selectedTxForDetail.evidenceSender.includes('@'));
+              const isEmailSource = selectedTxForDetail.id.startsWith('email-') || (selectedTxForDetail.evidenceSender && selectedTxForDetail.evidenceSender.includes('@'));
               return (
                 <div className={`p-3.5 rounded-2xl space-y-2 border ${
                   isEmailSource ? 'bg-amber-50/80 border-amber-200' : 'bg-emerald-50/70 border-emerald-200'
@@ -1322,11 +1314,11 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                     </div>
                   )}
 
-                  {selectedTxForDetail.accountInfo && (
+                  {selectedTxForDetail.referenceNumber && (
                     <div className={`text-xs flex items-center gap-1.5 ${isEmailSource ? 'text-amber-900' : 'text-emerald-900'}`}>
                       <span className="font-semibold">{isGu ? 'ખાતું / PRAN:' : 'Account / PRAN:'}</span>
                       <span className="bg-white px-2 py-0.5 rounded-lg border border-stone-200 font-mono font-bold text-[11px] text-stone-800">
-                        {selectedTxForDetail.accountInfo}
+                        {selectedTxForDetail.referenceNumber}
                       </span>
                     </div>
                   )}

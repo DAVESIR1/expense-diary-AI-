@@ -16,7 +16,6 @@ export const AndroidSMSPermissionModal: React.FC<AndroidSMSPermissionModalProps>
   onClose,
   onGrantPermission,
   currentLang,
-  t,
 }) => {
   if (!isOpen) return null;
 

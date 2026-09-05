@@ -6,7 +6,6 @@ import {
   X, 
   Plus, 
   Calendar, 
-  FolderPlus,
   Volume2
 } from 'lucide-react';
 import { Category, Transaction } from '../types';
@@ -131,10 +130,9 @@ export const OfflineReminderModal: React.FC<OfflineReminderModalProps> = ({
       category: finalCategory,
       title: title.trim() || (isGu ? 'રોકડ ખર્ચ' : 'Cash Expense'),
       date: new Date().toISOString().split('T')[0],
-      time: time || undefined,
+      time: time || new Date().toTimeString().split(' ')[0].substring(0, 5),
       paymentMode: 'Cash',
       notes: isGu ? 'દૈનિક ઓફલાઇન રીમાઇન્ડર દ્વારા નોંધાયેલ' : 'Logged via Daily Offline Reminder',
-      createdAt: new Date().toISOString(),
     });
 
     onClose();

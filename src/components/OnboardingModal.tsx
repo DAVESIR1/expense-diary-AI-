@@ -15,7 +15,6 @@ import {
   Fingerprint, 
   Clock,
   KeyRound,
-  Upload,
   RefreshCw,
   FileText
 } from 'lucide-react';

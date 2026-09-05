@@ -20,7 +20,6 @@ import {
   Clock,
   Phone,
   User as UserIcon,
-  Fingerprint,
   Shield,
   KeyRound
 } from 'lucide-react';
@@ -62,7 +61,6 @@ export const DiaryScreen: React.FC<DiaryScreenProps> = ({
   onDeleteBorrowLent,
   securityConfig,
   onUpdateSecurityConfig,
-  transactions,
   currentLang,
   t,
   currency,

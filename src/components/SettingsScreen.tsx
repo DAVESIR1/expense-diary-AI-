@@ -44,7 +44,8 @@ import { SecuritySetupModal } from './SecuritySetupModal';
 import { MultiRestoreModal } from './MultiRestoreModal';
 import { NativeBridgeService, NativePermissionsStatus } from '../services/nativeBridge';
 import { CloudSyncService, CloudSyncConfig } from '../services/cloudSync';
-import { AppVaultData } from '../services/vaultStorage';
+import { AppVaultData, VaultStorage } from '../services/vaultStorage';
+import { DeviceEncryption } from '../services/deviceCrypto';
 import { parseClearSmsBackup } from '../services/clearSmsImporter';
 import { CategoryRuleEngine, RuleDefinition, BUILTIN_CATEGORY_RULES } from '../services/categoryRuleEngine';
 
@@ -100,7 +101,6 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   securityConfig,
   onUpdateSecurityConfig,
   savedPassphraseWords,
-  onOpenSMSModal,
   onOpenEmailSync,
 }) => {
   const { isInstallable, install } = usePWAInstall();
@@ -642,6 +642,108 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
     }
   };
 
+  // ── On-Device Encryption (AES-GCM-256 at-rest vault seal) ──────────────────
+  const [isDeviceEncBusy, setIsDeviceEncBusy] = useState(false);
+  const deviceEncEnabled = DeviceEncryption.isEnabled();
+
+  const parseWordsInput = (raw: string): string[] =>
+    raw.trim().toLowerCase().split(/\s+/).filter(Boolean);
+
+  const handleToggleDeviceEncryption = async () => {
+    if (isDeviceEncBusy) return;
+    setIsDeviceEncBusy(true);
+    try {
+      if (!deviceEncEnabled) {
+        const raw = prompt(
+          isGu
+            ? 'ઓન-ડિવાઇસ એન્ક્રિપ્શન ચાલુ કરવા તમારી ૧૨ શબ્દોની રિકવરી કી દાખલ કરો (એક જગ્યા વચ્ચે):'
+            : 'Enter your 12 recovery words (space separated) to enable on-device encryption:'
+        );
+        if (!raw) return;
+        const words = parseWordsInput(raw);
+        if (words.length !== 12) {
+          alert(isGu ? 'બરાબર ૧૨ શબ્દો જરૂરી છે.' : 'Exactly 12 words are required.');
+          return;
+        }
+        const effectiveWords = savedPassphraseWords.length >= 12 ? savedPassphraseWords : words;
+        if (savedPassphraseWords.length >= 12) {
+          const stored = savedPassphraseWords.map((w) => w.trim().toLowerCase());
+          const matches = words.every((w, i) => w === stored[i]);
+          if (!matches) {
+            alert(
+              isGu
+                ? 'શબ્દો સાચવેલી રિકવરી કી સાથે મેળ ખાતા નથી.'
+                : 'Words do not match your saved recovery passphrase.'
+            );
+            return;
+          }
+        }
+        const fullVaultData: AppVaultData = {
+          version: 2,
+          updatedAt: new Date().toISOString(),
+          transactions,
+          diaryEntries,
+          borrowedLentRecords,
+          categories,
+          profile,
+          securityConfig,
+          savedPassphraseWords: effectiveWords,
+          lang: currentLang,
+          theme: activeTheme,
+          font: activeFont,
+          currency,
+          onboarded: true,
+        };
+        const res = await DeviceEncryption.enable(fullVaultData, effectiveWords);
+        if (!res.ok) {
+          alert(res.error || 'Failed to enable encryption.');
+          return;
+        }
+        // Persist the ciphertext wrapper to native Android storage immediately.
+        try {
+          const blob = localStorage.getItem('expense_diary_device_enc') || '';
+          await NativeBridgeService.savePersistentVault(DeviceEncryption.nativeEnvelope(blob));
+        } catch {
+          // Web/PWA context — native bridge absent
+        }
+        alert(
+          isGu
+            ? '✅ ઓન-ડિવાઇસ એન્ક્રિપ્શન ચાલુ થયું! ડેટા હવે AES-256 સાથે સીલ છે.'
+            : '✅ On-device encryption enabled! Your data is now sealed with AES-256 at rest.'
+        );
+        window.location.reload(); // clean reboot through the new lock gate
+      } else {
+        const raw = prompt(
+          isGu
+            ? 'એન્ક્રિપ્શન બંધ કરવા તમારી ૧૨ શબ્દોની રિકવરી કી દાખલ કરો:'
+            : 'Enter your 12 recovery words to disable encryption:'
+        );
+        if (!raw) return;
+        const words = parseWordsInput(raw);
+        const res = await DeviceEncryption.disable(words);
+        if (!res.ok || !res.vault) {
+          alert(res.error || 'Unlock failed.');
+          return;
+        }
+        // Restore plaintext vault (session continues unencrypted).
+        VaultStorage.syncToLocalStorage(res.vault);
+        try {
+          await NativeBridgeService.savePersistentVault(JSON.stringify(res.vault));
+        } catch {
+          // Web/PWA context
+        }
+        alert(
+          isGu
+            ? '✅ એન્ક્રિપ્શન બંધ થયું. ડેટા પુનઃસ્થાપિત થયો.'
+            : '✅ Encryption disabled. Data restored to standard storage.'
+        );
+        window.location.reload();
+      }
+    } finally {
+      setIsDeviceEncBusy(false);
+    }
+  };
+
   return (
     <div id="settings-screen-container" className="space-y-6 pb-28">
       {/* Flash notification */}
@@ -709,6 +811,45 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           >
             <Eye className="w-4 h-4 text-stone-500" />
             <span>{isGu ? '૧૨ શબ્દોની રિકવરી કી જુઓ' : 'View 12-Word Passphrase'}</span>
+          </button>
+        </div>
+
+        {/* On-Device Encryption (AES-GCM-256 at-rest seal) */}
+        <div className="pt-3 border-t border-stone-100 flex items-center justify-between gap-3">
+          <div className="flex-1 min-w-0">
+            <p className="text-xs font-bold text-stone-700 flex items-center gap-1.5">
+              <ShieldCheck className={`w-3.5 h-3.5 ${deviceEncEnabled ? 'text-emerald-600' : 'text-stone-400'}`} />
+              {isGu ? 'ઓન-ડિવાઇસ એન્ક્રિપ્શન (AES-256)' : 'On-Device Encryption (AES-256)'}
+              {deviceEncEnabled && (
+                <span className="px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-emerald-100 text-emerald-800">
+                  {isGu ? 'ચાલુ' : 'ON'}
+                </span>
+              )}
+            </p>
+            <p className="text-[10px] text-stone-500 mt-0.5 leading-relaxed">
+              {deviceEncEnabled
+                ? (isGu
+                  ? 'ડેટા આ ઉપકરણ પર AES-256 સાથે સીલ છે. બંધ કરવા ૧૨ શબ્દો જરૂરી છે.'
+                  : 'Data is sealed at rest with AES-256. 12 recovery words required to disable.')
+                : (isGu
+                  ? 'ચાલુ કરવાથી તમારો સમગ્ર ડેટા AES-256 સાથે સીલ થશે — અનલૉક માટે ૧૨ શબ્દો જરૂરી.'
+                  : 'Enable to seal your entire vault with AES-256 at rest — 12 words required to unlock.')}
+            </p>
+          </div>
+          <button
+            onClick={handleToggleDeviceEncryption}
+            disabled={isDeviceEncBusy}
+            className={`shrink-0 px-3.5 py-2 rounded-xl text-[11px] font-bold cursor-pointer transition disabled:opacity-50 ${
+              deviceEncEnabled
+                ? 'bg-stone-100 text-stone-700 hover:bg-stone-200 border border-stone-200'
+                : 'bg-emerald-600 text-white hover:bg-emerald-500'
+            }`}
+          >
+            {isDeviceEncBusy
+              ? (isGu ? '...' : '...')
+              : deviceEncEnabled
+                ? (isGu ? 'બંધ કરો' : 'Disable')
+                : (isGu ? 'ચાલુ કરો' : 'Enable')}
           </button>
         </div>
 

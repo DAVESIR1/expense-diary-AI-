@@ -1,11 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { 
-  Sparkles, 
-  Globe, 
-  User, 
-  BookOpen, 
-  Lock 
-} from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Globe, Lock } from 'lucide-react';
 import { 
   Transaction, 
   TransactionType, 
@@ -38,6 +32,7 @@ import { NativeBridgeService } from './services/nativeBridge';
 import { parseTransactionMessage, ParsedExpenseMessage } from './utils/smsParser';
 import { uid } from './utils/uid';
 import { VaultStorage } from './services/vaultStorage';
+import { DeviceEncryption } from './services/deviceCrypto';
 import { FinancialEmailSyncModal } from './components/FinancialEmailSyncModal';
 import { CategoryRuleEngine } from './services/categoryRuleEngine';
 
@@ -99,6 +94,10 @@ export default function App() {
   const [isAppLocked, setIsAppLocked] = useState<boolean>(() => {
     return securityConfig.hasCompletedSetup && !!securityConfig.pinHash;
   });
+
+  // On-Device Encryption state: true when the at-rest blob exists but the
+  // session key is gone (fresh app start) — the 12 recovery words are needed.
+  const [isDeviceLocked, setIsDeviceLocked] = useState<boolean>(false);
 
   // First-run Onboarding State
   const [showOnboarding, setShowOnboarding] = useState<boolean>(() => {
@@ -353,6 +352,15 @@ export default function App() {
   useEffect(() => {
     async function syncFromNativePersistentVault() {
       try {
+        // On-Device Encryption gate: if the at-rest blob exists but the session
+        // key is gone (fresh app start), financial data must stay sealed until
+        // the 12 recovery words unlock it.
+        if (DeviceEncryption.isEnabled() && !DeviceEncryption.isUnlocked()) {
+          setIsDeviceLocked(true);
+          setIsAppLocked(true);
+          return;
+        }
+
         const vault = await VaultStorage.loadVault();
         if (vault) {
           const localTxRaw = localStorage.getItem('expense_diary_transactions');
@@ -491,15 +499,18 @@ export default function App() {
         lastHiddenTimestamp = Date.now();
         // If set to 0 or immediately on exit, lock right away
         if ((securityConfig.autoLockMinutes ?? 0) <= 0) {
+          DeviceEncryption.lock().catch(() => undefined);
           setIsAppLocked(true);
         }
       } else if (document.visibilityState === 'visible') {
         const timeoutMinutes = securityConfig.autoLockMinutes ?? 0;
         if (timeoutMinutes <= 0) {
+          DeviceEncryption.lock().catch(() => undefined);
           setIsAppLocked(true);
         } else if (timeoutMinutes > 0 && lastHiddenTimestamp > 0) {
           const elapsedMinutes = (Date.now() - lastHiddenTimestamp) / 60000;
           if (elapsedMinutes >= timeoutMinutes) {
+            DeviceEncryption.lock().catch(() => undefined);
             setIsAppLocked(true);
           }
         }
@@ -509,6 +520,7 @@ export default function App() {
     const handlePageHide = () => {
       if (!securityConfig.hasCompletedSetup || !securityConfig.pinHash) return;
       if ((securityConfig.autoLockMinutes ?? 0) <= 0) {
+        DeviceEncryption.lock().catch(() => undefined);
         setIsAppLocked(true);
       }
     };
@@ -676,7 +688,7 @@ export default function App() {
       vendorOrPerson: msg.parsedData.vendorOrPerson,
       notes: msg.parsedData.notes,
       evidence: msg.rawText,
-      evidenceSender: msg.sender,
+      evidenceSender: msg.parsedData.vendorOrPerson,
       evidenceSource: 'sms',
       isAiGenerated: true,
     };
@@ -684,7 +696,7 @@ export default function App() {
     // Auto-learn category rule from user confirmation (ClearSMS Rule Engine pattern)
     const keyword = (msg.parsedData.vendorOrPerson || msg.parsedData.title || '').trim();
     if (keyword && finalCategory) {
-      const learnedRule = CategoryRuleEngine.learnCategoryRule(keyword, finalCategory, { sender: msg.sender });
+      const learnedRule = CategoryRuleEngine.learnCategoryRule(keyword, finalCategory);
       const { updatedTransactions } = CategoryRuleEngine.recategorizePastTransactions(
         [newTx, ...transactions],
         learnedRule
@@ -742,6 +754,27 @@ export default function App() {
       pinHash,
       pinSalt,
     }));
+  };
+
+  // On-Device Encryption: unlock the sealed at-rest vault with the 12 words.
+  // Returns null on success, or a human-readable error string.
+  const handleDeviceUnlock = async (words: string[]): Promise<string | null> => {
+    const res = await DeviceEncryption.unlockWithWords(words);
+    if (!res.ok || !res.vault) {
+      return res.error || 'Unlock failed.';
+    }
+    const vault = res.vault;
+    // Restore plaintext keys for this (now unlocked) WebView session.
+    VaultStorage.syncToLocalStorage(vault);
+    if (vault.transactions) setTransactions(vault.transactions);
+    if (vault.diaryEntries) setDiaryEntries(vault.diaryEntries);
+    if (vault.borrowedLentRecords) setBorrowedLentRecords(vault.borrowedLentRecords);
+    if (vault.categories && vault.categories.length > 0) setCategories(vault.categories);
+    if (vault.profile) setProfile(vault.profile);
+    if (vault.securityConfig) setSecurityConfig(vault.securityConfig);
+    if (vault.savedPassphraseWords) setSavedPassphraseWords(vault.savedPassphraseWords);
+    setIsDeviceLocked(false);
+    return null;
   };
 
   // Onboarding Complete (Supports direct data restoration from native vault or backup file)
@@ -854,14 +887,18 @@ export default function App() {
       id="app-root-container"
       className={`min-h-screen ${getThemeBackground()} ${getFontFamilyClass()} text-stone-800 transition-colors duration-200 flex flex-col`}
     >
-      {/* 1. App Lock Screen (Full Screen PIN Overlay) */}
-      {isAppLocked && securityConfig.hasCompletedSetup && securityConfig.pinHash && (
+      {/* 1. App Lock Screen (Full Screen PIN Overlay / Device-Encryption Words Gate) */}
+      {(isAppLocked || isDeviceLocked) && (
         <AuthLockScreen
           securityConfig={securityConfig}
-          onUnlock={() => setIsAppLocked(false)}
+          onUnlock={() => {
+            setIsAppLocked(false);
+            setIsDeviceLocked(false);
+          }}
           onResetPinWithPassphrase={handleResetPinWithPassphrase}
           currentLang={currentLang}
           t={t}
+          deviceLock={isDeviceLocked ? { onUnlockWithWords: handleDeviceUnlock } : undefined}
         />
       )}
 

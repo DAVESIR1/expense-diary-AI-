@@ -10,6 +10,13 @@ interface AuthLockScreenProps {
   onResetPinWithPassphrase: (newPin: string) => Promise<void>;
   currentLang: string;
   t: TranslationStrings;
+  /**
+   * On-Device Encryption gate: when present, the sealed at-rest vault must be
+   * decrypted with the 12 recovery words BEFORE any PIN/biometric is offered.
+   */
+  deviceLock?: {
+    onUnlockWithWords: (words: string[]) => Promise<string | null>;
+  };
 }
 
 export const AuthLockScreen: React.FC<AuthLockScreenProps> = ({
@@ -18,6 +25,7 @@ export const AuthLockScreen: React.FC<AuthLockScreenProps> = ({
   onResetPinWithPassphrase,
   currentLang,
   t,
+  deviceLock,
 }) => {
   const [pin, setPin] = useState('');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -43,6 +51,7 @@ export const AuthLockScreen: React.FC<AuthLockScreenProps> = ({
       }, 100);
       return () => clearTimeout(timer);
     }
+    return undefined;
   }, [hasBiometrics]);
 
   const handleKeyClick = (digit: string) => {
@@ -169,6 +178,95 @@ export const AuthLockScreen: React.FC<AuthLockScreenProps> = ({
       setIsVerifying(false);
     }
   };
+
+  // ── On-Device Encryption words gate ────────────────────────────────────────
+  const [deviceWords, setDeviceWords] = useState('');
+  const [deviceError, setDeviceError] = useState<string | null>(null);
+  const [deviceBusy, setDeviceBusy] = useState(false);
+
+  const handleDeviceUnlockClick = async () => {
+    if (!deviceLock) return;
+    const words = normalizeWords(deviceWords).split(' ').filter(Boolean);
+    if (words.length !== 12) {
+      setDeviceError(
+        isGu
+          ? `બરાબર ૧૨ શબ્દો દાખલ કરો. (હાલમાં: ${words.length})`
+          : `Please enter exactly 12 words. (Current: ${words.length})`
+      );
+      return;
+    }
+    setDeviceBusy(true);
+    setDeviceError(null);
+    try {
+      const err = await deviceLock.onUnlockWithWords(words);
+      if (err) {
+        setDeviceError(err);
+      } else {
+        onUnlock();
+      }
+    } catch {
+      setDeviceError(isGu ? 'અનલૉક કરવામાં ક્ષતિ થઈ.' : 'Unlock failed. Please try again.');
+    } finally {
+      setDeviceBusy(false);
+    }
+  };
+
+  if (deviceLock) {
+    return (
+      <div
+        id="device-encryption-lock"
+        className="fixed inset-0 z-[100] bg-stone-900 flex flex-col items-center justify-center p-6 sm:p-10 select-none text-white animate-in fade-in duration-300"
+      >
+        <div className="w-full max-w-md space-y-5">
+          <div className="flex flex-col items-center text-center">
+            <div className="w-16 h-16 rounded-3xl bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center text-emerald-400 mb-4 shadow-lg shadow-emerald-950/50">
+              <KeyRound className="w-8 h-8 stroke-[2.2]" />
+            </div>
+            <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-white">{t.appName}</h1>
+            <p className="text-xs sm:text-sm text-stone-400 mt-2 leading-relaxed">
+              {isGu
+                ? 'તમારો ડેટા આ ઉપકરણ પર એન્ક્રિપ્ટેડ છે. અનલૉક કરવા તમારી ૧૨ શબ્દોની રિકવરી કી દાખલ કરો.'
+                : 'Your data is encrypted on this device. Enter your 12 recovery words to unlock.'}
+            </p>
+          </div>
+
+          {deviceError && (
+            <div className="p-3 bg-rose-500/20 border border-rose-500/30 text-rose-300 text-xs rounded-xl flex items-center gap-2 animate-shake">
+              <AlertCircle className="w-4 h-4 shrink-0" />
+              <span>{deviceError}</span>
+            </div>
+          )}
+
+          <textarea
+            rows={4}
+            value={deviceWords}
+            onChange={(e) => {
+              setDeviceWords(e.target.value);
+              setDeviceError(null);
+            }}
+            placeholder="word1 word2 word3 ... word12"
+            autoFocus
+            className="w-full p-3 text-xs rounded-xl bg-stone-800 border border-stone-700 text-stone-100 placeholder-stone-600 outline-none focus:border-emerald-500 font-mono"
+          />
+
+          <button
+            onClick={handleDeviceUnlockClick}
+            disabled={deviceBusy || !deviceWords.trim()}
+            className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-sm font-bold text-white flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 transition"
+          >
+            <Lock className="w-4 h-4" />
+            <span>{deviceBusy ? (isGu ? 'અનલૉક થઈ રહ્યું છે...' : 'Unlocking...') : (isGu ? 'વોલ્ટ અનલૉક કરો' : 'Unlock Vault')}</span>
+          </button>
+
+          <p className="text-[10px] text-stone-500 text-center leading-relaxed">
+            {isGu
+              ? 'એન્ક્રિપ્શન કી તમારા શબ્દોમાંથી બને છે — તે ક્યાંય સેવ થતા નથી. શબ્દો ગુમાવશો તો ડેટા પુનઃપ્રાપ્ત થશે નહીં.'
+              : 'The encryption key is derived from your words and is never stored. Without the words, the data cannot be recovered.'}
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div

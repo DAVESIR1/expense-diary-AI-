@@ -1,5 +1,6 @@
 import { Transaction, DiaryEntry, BorrowedLentRecord, Category, UserProfile, SecurityConfig } from '../types';
 import { NativeBridgeService } from './nativeBridge';
+import { DeviceEncryption, DEVICE_ENC_BLOB_KEY } from './deviceCrypto';
 
 export interface AppVaultData {
   version: number;
@@ -24,28 +25,34 @@ let debounceTimer: any = null;
 export const VaultStorage = {
   /**
    * Sync complete vault data into standard localStorage keys
+   *
+   * When device encryption is enabled and the session is LOCKED, sensitive
+   * financial fields are NOT written to plaintext localStorage — only
+   * non-sensitive UI preferences are synced so the lock screen renders.
    */
   syncToLocalStorage(vault: Partial<AppVaultData>): void {
+    const sealedButLocked = DeviceEncryption.isEnabled() && !DeviceEncryption.isUnlocked();
+    const writeSensitive = !sealedButLocked;
     try {
-      if (vault.transactions) {
+      if (writeSensitive && vault.transactions) {
         localStorage.setItem('expense_diary_transactions', JSON.stringify(vault.transactions));
       }
-      if (vault.diaryEntries) {
+      if (writeSensitive && vault.diaryEntries) {
         localStorage.setItem('expense_diary_entries', JSON.stringify(vault.diaryEntries));
       }
-      if (vault.borrowedLentRecords) {
+      if (writeSensitive && vault.borrowedLentRecords) {
         localStorage.setItem('expense_diary_borrow_lent', JSON.stringify(vault.borrowedLentRecords));
       }
       if (vault.categories) {
         localStorage.setItem('expense_diary_categories', JSON.stringify(vault.categories));
       }
-      if (vault.profile) {
+      if (writeSensitive && vault.profile) {
         localStorage.setItem('expense_diary_profile', JSON.stringify(vault.profile));
       }
       if (vault.securityConfig) {
         localStorage.setItem('expense_diary_security_config', JSON.stringify(vault.securityConfig));
       }
-      if (vault.savedPassphraseWords) {
+      if (writeSensitive && vault.savedPassphraseWords) {
         localStorage.setItem('expense_diary_recovery_words', JSON.stringify(vault.savedPassphraseWords));
       }
       if (vault.lang) {
@@ -63,7 +70,9 @@ export const VaultStorage = {
       if (vault.onboarded !== undefined) {
         localStorage.setItem('expense_diary_onboarded', vault.onboarded ? 'true' : 'false');
       }
-      localStorage.setItem(VAULT_STORAGE_KEY, JSON.stringify(vault));
+      if (writeSensitive) {
+        localStorage.setItem(VAULT_STORAGE_KEY, JSON.stringify(vault));
+      }
     } catch (e) {
       console.warn('[VaultStorage] Error syncing to localStorage:', e);
     }
@@ -76,6 +85,13 @@ export const VaultStorage = {
     // 1. Immediately sync to localStorage for synchronous web UI access
     this.syncToLocalStorage(vault);
 
+    // 1b. Keep the sealed at-rest blob fresh when device encryption is active
+    if (DeviceEncryption.isEnabled() && DeviceEncryption.isUnlocked()) {
+      DeviceEncryption.sealVault(vault).catch(() => {
+        // best-effort; previous blob remains valid until next save
+      });
+    }
+
     // 2. Debounce native persistent write (300ms) to prevent excessive disk writes on rapid edits
     if (debounceTimer) {
       clearTimeout(debounceTimer);
@@ -83,6 +99,16 @@ export const VaultStorage = {
 
     debounceTimer = setTimeout(async () => {
       try {
+        // When device encryption is on, persist only the ciphertext wrapper
+        // to Android SharedPreferences — never plaintext financial data.
+        if (DeviceEncryption.isEnabled() && DeviceEncryption.isUnlocked()) {
+          const sealed = await DeviceEncryption.sealVault(vault);
+          if (sealed) {
+            const blob = localStorage.getItem(DEVICE_ENC_BLOB_KEY) || '';
+            await NativeBridgeService.savePersistentVault(DeviceEncryption.nativeEnvelope(blob));
+            return;
+          }
+        }
         const json = JSON.stringify(vault);
         await NativeBridgeService.savePersistentVault(json);
       } catch (e) {
@@ -110,6 +136,14 @@ export const VaultStorage = {
   async saveVaultImmediate(vault: AppVaultData): Promise<boolean> {
     this.syncToLocalStorage(vault);
     try {
+      // Seal-first when device encryption is active: persist ciphertext only.
+      if (DeviceEncryption.isEnabled() && DeviceEncryption.isUnlocked()) {
+        const sealed = await DeviceEncryption.sealVault(vault);
+        if (sealed) {
+          const blob = localStorage.getItem(DEVICE_ENC_BLOB_KEY) || '';
+          return await NativeBridgeService.savePersistentVault(DeviceEncryption.nativeEnvelope(blob));
+        }
+      }
       const json = JSON.stringify(vault);
       return await NativeBridgeService.savePersistentVault(json);
     } catch (e) {
@@ -147,13 +181,35 @@ export const VaultStorage = {
     try {
       const res = await NativeBridgeService.getPersistentVault();
       if (res.exists && res.vaultData) {
-        const parsed: AppVaultData = JSON.parse(res.vaultData);
-        if (parsed && (parsed.transactions?.length > 0 || parsed.onboarded)) {
-          return parsed;
+        // Device-encrypted native envelope: only readable with an unlocked session.
+        if (DeviceEncryption.isNativeEnvelope(res.vaultData)) {
+          const decrypted = await DeviceEncryption.unlockNativeEnvelope(res.vaultData);
+          if (decrypted && (decrypted.transactions?.length > 0 || decrypted.onboarded)) {
+            return decrypted;
+          }
+          // Locked session → fall through to blob/boot-gate handling below.
+        } else {
+          const parsed: AppVaultData = JSON.parse(res.vaultData);
+          if (parsed && (parsed.transactions?.length > 0 || parsed.onboarded)) {
+            return parsed;
+          }
         }
       }
     } catch (e) {
       console.warn('[VaultStorage] Could not read from native persistent vault:', e);
+    }
+
+    // Priority 1b: Device-encrypted at-rest blob (silent unlock if session key cached)
+    if (DeviceEncryption.isEnabled()) {
+      try {
+        const sealed = await DeviceEncryption.trySilentUnlock();
+        if (sealed && (sealed.transactions?.length > 0 || sealed.onboarded)) {
+          return sealed;
+        }
+      } catch {
+        // Locked — boot gate will demand the 12 recovery words.
+      }
+      return null;
     }
 
     // Priority 2: Unified localStorage snapshot
@@ -219,9 +275,16 @@ export const VaultStorage = {
       'expense_diary_recovery_words',
       'expense_diary_onboarded',
       VAULT_STORAGE_KEY,
+      DEVICE_ENC_BLOB_KEY,
+      'expense_diary_device_enc_flag',
     ];
     for (const k of keys) {
       localStorage.removeItem(k);
+    }
+    try {
+      sessionStorage.removeItem('expense_diary_device_key_session');
+    } catch {
+      // ignore
     }
     await NativeBridgeService.clearPersistentVault();
   },

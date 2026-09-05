@@ -9,12 +9,9 @@ import {
   Search, 
   Check, 
   CheckSquare, 
-  Square,
   ShieldCheck,
   DownloadCloud,
-  Download,
   Filter,
-  CheckCircle2,
   X
 } from 'lucide-react';
 import { Transaction, Category, ReportPeriod, LayoutStyle, PageTheme } from '../types';

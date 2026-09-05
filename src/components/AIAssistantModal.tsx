@@ -2,14 +2,11 @@ import React, { useState } from 'react';
 import { 
   Sparkles, 
   X, 
-  MessageSquareText, 
   Lightbulb, 
   ShieldAlert, 
   Send, 
-  Check, 
   Smartphone,
   CheckCircle2,
-  AlertCircle
 } from 'lucide-react';
 import { Transaction, Category, PendingAIMessage, AppActivityAlert } from '../types';
 import { TranslationStrings } from '../data/languages';
@@ -30,12 +27,10 @@ export const AIAssistantModal: React.FC<AIAssistantModalProps> = ({
   isOpen,
   onClose,
   transactions,
-  categories,
   onAddTransaction,
   onAddPendingAiMessage,
   currency,
   currentLang,
-  t,
 }) => {
   if (!isOpen) return null;
 
