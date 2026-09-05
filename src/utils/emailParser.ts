@@ -8,6 +8,7 @@
  */
 
 import { TransactionType } from '../types';
+import { uid } from './uid';
 
 export interface ParsedFinancialEmail {
   id: string;
@@ -107,7 +108,7 @@ export function parseFinancialEmail(
       }
 
       return {
-        id: `email-nps-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+        id: uid('email-nps', 10),
         source: 'email',
         sender: sender || 'CRA-NSDL (Protean)',
         subject,
@@ -156,7 +157,7 @@ export function parseFinancialEmail(
         }
 
         return {
-          id: `email-mf-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+          id: uid('email-mf', 10),
           source: 'email',
           sender: sender || 'Mutual Fund',
           subject,
@@ -195,7 +196,7 @@ export function parseFinancialEmail(
         }
 
         return {
-          id: `email-salary-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+          id: uid('email-salary', 10),
           source: 'email',
           sender: sender || 'Payroll',
           subject,
@@ -252,7 +253,7 @@ export function parseFinancialEmail(
           }
 
           return {
-            id: `email-bank-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+            id: uid('email-bank', 10),
             source: 'email',
             sender: sender || 'Bank Alert',
             subject,

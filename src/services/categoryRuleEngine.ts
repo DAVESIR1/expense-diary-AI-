@@ -10,6 +10,7 @@
  */
 
 import { Transaction } from '../types';
+import { uid } from '../utils/uid';
 
 export interface RuleMatch {
   senderPattern?: string;
@@ -255,7 +256,7 @@ export const CategoryRuleEngine = {
       return r.name.toLowerCase() === `user: ${cleanKeyword.toLowerCase()}`;
     });
 
-    const ruleId = existingIndex >= 0 ? userRules[existingIndex].id : `user-rule-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
+    const ruleId = existingIndex >= 0 ? userRules[existingIndex].id : uid('user-rule', 10);
     
     // Escape regex special chars for safe pattern matching
     const escaped = cleanKeyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');

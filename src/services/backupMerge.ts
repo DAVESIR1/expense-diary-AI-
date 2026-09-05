@@ -11,6 +11,7 @@
 
 import { Transaction, DiaryEntry, BorrowedLentRecord, Category, UserProfile } from '../types';
 import { EncryptedBackupEnvelope, decryptPayload } from './encryption';
+import { uid } from '../utils/uid';
 
 export interface FileInspectionResult {
   fileName: string;
@@ -214,7 +215,7 @@ export class BackupMergeService {
           if (existingTxIds.has(inTx.id)) {
             conflictTxCount++;
             if (conflictStrategy === 'both') {
-              const clone = { ...inTx, id: `tx-${Date.now()}-${Math.random().toString(36).substring(2, 7)}` };
+              const clone = { ...inTx, id: uid('tx', 12) };
               txMap.set(key, clone);
               existingTxIds.add(clone.id);
             } else if (conflictStrategy === 'incoming') {

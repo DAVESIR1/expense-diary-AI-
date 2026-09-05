@@ -16,3 +16,18 @@ android/app/debug.keystore
 android/app/src/main/assets/public/
 clearsms_ref/
 user_clearsms_backup.json
+
+# --- Signing secrets (NEVER commit) ---
+key.properties
+signing/
+*.keystore
+*.jks
+*.p12
+
+# --- Local test/milestone recordings (repo bloat) ---
+records/
+
+# --- Test runner output ---
+playwright-report/
+test-results/
+.vitest/

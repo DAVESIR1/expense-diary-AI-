@@ -76,36 +76,23 @@ public class FinancialNotificationListener extends NotificationListenerService {
             return;
         }
 
-        boolean isEmailApp = lowerPkg.contains("android.gm") ||
-                             lowerPkg.contains("email") ||
-                             lowerPkg.contains("outlook") ||
-                             lowerPkg.contains("mail");
-
         boolean hasFinancialKeywords = lowerText.contains("rs.") ||
                                        lowerText.contains("rs ") ||
-                                       lowerText.contains("rs:") ||
                                        lowerText.contains("₹") ||
                                        lowerText.contains("inr") ||
                                        lowerText.contains("debited") ||
                                        lowerText.contains("credited") ||
-                                       lowerText.contains("credit") ||
-                                       lowerText.contains("salary") ||
-                                       lowerText.contains("payroll") ||
-                                       lowerText.contains("deposited") ||
                                        lowerText.contains("paid") ||
                                        lowerText.contains("sent") ||
                                        lowerText.contains("spent") ||
                                        lowerText.contains("received") ||
                                        lowerText.contains("transferred") ||
-                                       lowerText.contains("contribution") ||
-                                       lowerText.contains("pran") ||
                                        lowerText.contains("nps") ||
                                        lowerText.contains("upi");
 
-        if (isFinancialApp || (isEmailApp && hasFinancialKeywords) || hasFinancialKeywords) {
+        if (isFinancialApp || hasFinancialKeywords) {
             saveFinancialNotification(this, pkg, title, text, sbn.getPostTime());
-            String sourceTag = isEmailApp ? "email" : "notification";
-            FinancialSmsReceiver.savePendingTransaction(this, sourceTag, pkg, combined, sbn.getPostTime());
+            FinancialSmsReceiver.savePendingTransaction(this, "notification", pkg, combined, sbn.getPostTime());
         }
     }
 

@@ -25,6 +25,7 @@ export interface ParsedExpenseMessage {
   evidenceSource: 'sms' | 'notification';
   confidence: number;
   needsReview?: boolean;
+  notes?: string;
 }
 
 export interface ParseOptions {

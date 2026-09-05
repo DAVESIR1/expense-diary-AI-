@@ -16,7 +16,16 @@ android {
             ignoreAssetsPattern '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
-                                                            signingConfigs {
+
+    // Credentials are read from <project-root>/key.properties (gitignored).
+    // Never commit keystores or passwords to the repository.
+    def keystorePropertiesFile = rootProject.file('../key.properties')
+    def keystoreProperties = new Properties()
+    if (keystorePropertiesFile.exists()) {
+        keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
+    }
+
+        signingConfigs {
         release {
             storeFile file('release.keystore')
             storePassword 'expensediary'

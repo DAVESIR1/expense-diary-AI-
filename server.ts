@@ -7,15 +7,46 @@ import { createServer as createViteServer } from 'vite';
 dotenv.config();
 
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 
-// Enable CORS for external PWA scanners, testing tools and mobile apps
-app.use((req, res, next) => {
-  res.setHeader('Access-Control-Allow-Origin', '*');
+// ---- CORS hardening ----
+// Allow only configured origins (never a bare "*" in production), otherwise
+// anonymous visitors could call the Gemini endpoints and burn your API quota.
+const DEFAULT_ALLOWED_ORIGINS = 'http://localhost:5173,http://localhost:3000,http://127.0.0.1:5173,http://127.0.0.1:3000';
+const allowedOrigins = new Set(
+  (process.env.ALLOWED_ORIGINS || DEFAULT_ALLOWED_ORIGINS)
+    .split(',')
+    .map((o) => o.trim())
+    .filter(Boolean)
+);
+if (process.env.APP_URL) {
+  allowedOrigins.add(process.env.APP_URL.replace(/\/+$/, ''));
+}
+
+// Optional API token gate for all /api/gemini/* endpoints.
+const apiToken = process.env.API_TOKEN || '';
+
+app.use((req: Request, res: Response, next) => {
+  const origin = req.headers.origin;
+  if (origin && allowedOrigins.has(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Vary', 'Origin');
+  } else if (!origin) {
+    // Same-origin / non-browser clients (Android WebView, curl, tests).
+    res.setHeader('Access-Control-Allow-Origin', '*');
+  }
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
   if (req.method === 'OPTIONS') {
     return res.sendStatus(204);
+  }
+
+  // Optional bearer-token protection for AI endpoints.
+  if (apiToken && req.path.startsWith('/api/gemini/')) {
+    const auth = req.headers.authorization || '';
+    if (auth !== `Bearer ${apiToken}`) {
+      return res.status(401).json({ error: 'Unauthorized: missing or invalid API token.' });
+    }
   }
   next();
 });

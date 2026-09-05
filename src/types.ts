@@ -15,7 +15,7 @@ export interface Transaction {
   isAiGenerated?: boolean;
   needsConfirmation?: boolean;
   evidence?: string;
-  evidenceSource?: 'sms' | 'notification' | 'manual';
+  evidenceSource?: 'sms' | 'notification' | 'manual' | 'email';
   evidenceImage?: string; // base64 encoded photo or receipt image
   evidenceSender?: string; // SMS sender address (e.g. AX-HDFCBK, VM-SBIINB)
   referenceNumber?: string;

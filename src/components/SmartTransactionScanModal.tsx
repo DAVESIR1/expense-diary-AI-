@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { Transaction, Category, TransactionType } from '../types';
 import { ParsedExpenseMessage } from '../utils/smsParser';
+import { uid } from '../utils/uid';
 import { TranslationStrings } from '../data/languages';
 
 export interface ScannedCandidate {
@@ -86,7 +87,7 @@ export const SmartTransactionScanModal: React.FC<SmartTransactionScanModalProps>
     const approvedTxs: Transaction[] = items
       .filter((item) => item.selected)
       .map((item) => ({
-        id: `tx-${Date.now()}-${Math.random().toString(36).substr(2, 7)}`,
+        id: uid('tx', 10),
         type: item.type,
         amount: item.amount,
         title: item.title,

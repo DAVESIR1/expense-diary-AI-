@@ -16,6 +16,8 @@ import {
 } from 'lucide-react';
 import { Transaction, Category, PendingAIMessage, AppActivityAlert } from '../types';
 import { TranslationStrings } from '../data/languages';
+import { parseTransactionMessage } from '../utils/smsParser';
+import { uid } from '../utils/uid';
 
 interface AIBrainScreenProps {
   transactions: Transaction[];
@@ -124,7 +126,7 @@ export const AIBrainScreen: React.FC<AIBrainScreenProps> = ({
       const parsed = await response.json();
       
       const newPendingMessage: PendingAIMessage = {
-        id: `ai-msg-${Date.now()}`,
+        id: uid('ai-msg', 10),
         rawText: text,
         parsedData: {
           type: parsed.type || 'expense',
@@ -145,27 +147,33 @@ export const AIBrainScreen: React.FC<AIBrainScreenProps> = ({
       setParseStatus('સફળતાપૂર્વક શોધાયું! પુષ્ટિ માટે ઉપર બતાવેલ છે.');
       setRawInput('');
     } catch (err) {
-      // Fallback local smart heuristic parser in case offline or API unavailable
-      const isCredit = /credit|credited|received|જમા|મળ્યા/i.test(text);
-      const amtMatch = text.match(/(?:Rs\.?|INR|₹)\s*([\d,]+(?:\.\d{2})?)/i);
-      const amount = amtMatch ? parseFloat(amtMatch[1].replace(/,/g, '')) : 150;
-      
+      // Fallback: fully-local ClearSMS engine + financial knowledge-base parser.
+      // This is what runs inside the packaged Android APK when the /api/gemini
+      // server (or a hosted deployment) is not reachable.
+      const local = parseTransactionMessage(text, [], 'sms');
+      const isCredit = local?.type === 'income';
+
       const fallbackMsg: PendingAIMessage = {
-        id: `ai-msg-${Date.now()}`,
+        id: uid('ai-msg', 10),
         rawText: text,
         parsedData: {
-          type: isCredit ? 'income' : 'expense',
-          amount,
-          title: isCredit ? 'શોધાયેલ આવક' : 'શોધાયેલ ખર્ચ',
-          category: isCredit ? 'Salary' : 'Bills & Utilities',
-          paymentMode: 'UPI',
-          confirmationQuestion: `AI દ્વારા શોધાયેલ: ${currency}${amount} નો વ્યવહાર સાચો છે? તેને ડાયરીમાં ઉમેરું?`,
+          type: local?.type || (isCredit ? 'income' : 'expense'),
+          amount: local?.amount || 0,
+          title: local?.title || (isCredit ? 'શોધાયેલ આવક' : 'શોધાયેલ ખર્ચ'),
+          category: local?.category || (isCredit ? 'Salary' : 'Bills & Utilities'),
+          vendorOrPerson: local?.vendorOrPerson || undefined,
+          paymentMode: local?.paymentMode || 'UPI',
+          notes: local?.notes || undefined,
+          confirmationQuestion:
+            `AI દ્વારા શોધાયેલ: ${currency}${local?.amount ?? 0} નો વ્યવહાર સાચો છે? તેને ડાયરીમાં ઉમેરું?`,
         },
         detectedAt: new Date().toISOString(),
       };
 
       onAddPendingAiMessage(fallbackMsg);
-      setParseStatus('શોધાયું અને પુષ્ટિ માટે તૈયાર છે!');
+      setParseStatus(
+        'AI સર્વર અનુપલબ્ધ — સચોટ ઓન-ડિવાઇસ પાર્સર વપરાયો. (AI server offline — used on-device parser.)'
+      );
       setRawInput('');
     } finally {
       setIsParsing(false);
@@ -269,18 +277,26 @@ export const AIBrainScreen: React.FC<AIBrainScreenProps> = ({
         ]);
       }
     } catch (err) {
-      // Fallback
-      const amtMatch = userText.match(/(\d+)/);
-      const amt = amtMatch ? parseInt(amtMatch[1], 10) : 100;
+      // Local fallback (offline APK / server unreachable): reuse the on-device parser
+      const local = parseTransactionMessage(userText, [], 'notification');
+      const fallbackAmt =
+        local?.amount ||
+        (parseInt(userText.replace(/\D/g, '').slice(0, 6), 10) > 0
+          ? parseInt(userText.replace(/\D/g, '').slice(0, 6), 10)
+          : 100);
+      const fallbackTitle =
+        local?.title || userText.substring(0, 30) || 'ઓફલાઇન રોકડ ખર્ચ';
+      const fallbackCategory = local?.category || 'Other Expense';
+
       onAddTransaction({
-        type: 'expense',
-        amount: amt,
-        title: userText.substring(0, 30),
-        category: 'Other Expense',
+        type: local?.type || 'expense',
+        amount: fallbackAmt,
+        title: fallbackTitle,
+        category: fallbackCategory,
         date: new Date().toISOString().split('T')[0],
         time: new Date().toTimeString().split(' ')[0].substring(0, 5),
         paymentMode: 'Cash',
-        notes: 'ઓફલાઇન વાતચીત દ્વારા ઉમેરેલ',
+        notes: 'ઓફલાઇન વાતચીત દ્વારા ઉમેરેલ (AI સર્વર ઓફલાઇન)',
         isAiGenerated: true,
       });
 
@@ -288,7 +304,7 @@ export const AIBrainScreen: React.FC<AIBrainScreenProps> = ({
         ...prev,
         {
           sender: 'ai',
-          text: `મેં ₹${amt} નો ખર્ચ ડાયરીમાં ઉમેરી લીધો છે!`,
+          text: `મેં ${currency}${fallbackAmt} નો ખર્ચ '${fallbackTitle}' (${fallbackCategory}) કેટેગરીમાં ડાયરીમાં ઉમેરી લીધો છે!`,
           time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         },
       ]);

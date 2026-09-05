@@ -1,8 +1,11 @@
 # Sample key.properties for Android signing
 # Create a file named key.properties (DO NOT COMMIT your real keystore or passwords)
 # Place it at the project root, then run the Android build.
+#
+# NOTE: storeFile is resolved relative to the android/app directory, so use
+# ../keystore.jks when the keystore lives at the project root.
 
-storeFile=keystore.jks
+storeFile=../keystore.jks
 storePassword=changeit
 keyAlias=upload
 keyPassword=changeit

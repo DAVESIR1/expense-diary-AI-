@@ -36,6 +36,7 @@ import { hashWithPBKDF2 } from './services/security';
 import { MigrationManager } from './services/dataMigration';
 import { NativeBridgeService } from './services/nativeBridge';
 import { parseTransactionMessage, ParsedExpenseMessage } from './utils/smsParser';
+import { uid } from './utils/uid';
 import { VaultStorage } from './services/vaultStorage';
 import { FinancialEmailSyncModal } from './components/FinancialEmailSyncModal';
 import { CategoryRuleEngine } from './services/categoryRuleEngine';
@@ -280,7 +281,7 @@ export default function App() {
               }
             } else {
               candidates.push({
-                id: `scanned-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
+                id: uid('scanned', 10),
                 selected: true,
                 type: parsed.type,
                 amount: parsed.amount,
@@ -602,7 +603,7 @@ export default function App() {
     } else {
       const tx: Transaction = {
         ...newTx,
-        id: `tx-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
+        id: uid('tx', 10),
       };
 
       const keyword = (newTx.vendorOrPerson || newTx.title || '').trim();
@@ -664,7 +665,7 @@ export default function App() {
 
     const finalCategory = customCategory || msg.parsedData.category;
     const newTx: Transaction = {
-      id: `tx-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
+      id: uid('tx', 10),
       type: msg.parsedData.type,
       amount: msg.parsedData.amount,
       title: msg.parsedData.title,
@@ -1115,7 +1116,7 @@ export default function App() {
           currentLang={currentLang}
           onConfirm={(confirmed) => {
             const newTx: Transaction = {
-              id: `tx-ambig-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
+              id: uid('tx-ambig', 12),
               type: confirmed.type,
               amount: confirmed.amount,
               title: confirmed.title,

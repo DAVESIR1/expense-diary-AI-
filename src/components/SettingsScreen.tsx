@@ -1769,6 +1769,14 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                   ? 'ગેરંટી: તમારો ડેટા તમારા 12 શબ્દોના માસ્ટર પાસફ્રેઝથી ફોનમાં જ 256-બીટ એન્ક્રિપ્ટ થઈને જશે. ક્લાઉડ સર્વર કે અન્ય કોઈ પણ તેને વાંચી શકશે નહીં!'
                   : 'Zero-Knowledge: Encrypted on-device using your 12-word passphrase. 100% private.'}
               </div>
+
+              <div className="text-[10px] text-amber-800 bg-amber-50 p-2 rounded-xl border border-amber-200">
+                ⚠️ {isGu ? (
+                  <>Firestore <strong>rules</strong> 'test mode' માં મૂકેલા હોય તો કોઈપણ તમારી <strong>document ID</strong> પર લખી શકે છે (backup ઉપર overwrite). સેટઅપ પછી rules બદલો: <code>allow read, write: if request.auth != null;</code> અને દરેક user <strong>unique document ID</strong> (userSyncId) વાપરે.</>
+                ) : (
+                  <>If Firestore <strong>rules</strong> remain in 'test mode', anyone can overwrite this backup document. After setup, restrict writes — e.g. <code>allow read, write: if request.auth != null;</code> — and always use a <strong>unique document ID</strong> (userSyncId) per account.</>
+                )}
+              </div>
             </div>
 
             {/* Actions */}

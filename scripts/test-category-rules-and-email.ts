@@ -38,6 +38,8 @@ const sampleTransactions: Transaction[] = [
     category: 'Other',
     type: 'expense',
     date: '2026-09-01',
+    time: '10:30',
+    paymentMode: 'UPI',
     vendorOrPerson: 'Chai Tapri',
   },
   {
@@ -47,6 +49,8 @@ const sampleTransactions: Transaction[] = [
     category: 'Other',
     type: 'expense',
     date: '2026-09-02',
+    time: '16:45',
+    paymentMode: 'UPI',
     vendorOrPerson: 'Chai Tapri',
   },
   {
@@ -56,6 +60,8 @@ const sampleTransactions: Transaction[] = [
     category: 'Travel & Fuel',
     type: 'expense',
     date: '2026-09-03',
+    time: '08:15',
+    paymentMode: 'UPI',
     vendorOrPerson: 'Uber',
   }
 ];

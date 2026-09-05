@@ -1,5 +1,6 @@
 import { Transaction, Category } from '../types';
 import { parseTransactionMessage } from '../utils/smsParser';
+import { uid } from '../utils/uid';
 
 export interface ClearSmsImportResult {
   success: boolean;
@@ -97,7 +98,7 @@ export function parseClearSmsBackup(
       }
 
       const txn: Transaction = {
-        id: `clearsms-${msg.id || Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
+        id: uid('clearsms', 9),
         type: parsed.type,
         amount: parsed.amount,
         title: parsed.title,
