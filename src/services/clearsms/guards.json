@@ -1,0 +1,174 @@
+{
+  "version": "1.0",
+  "guards": [
+    {
+      "id": "statement_notice",
+      "description": "Statement delivery notices ('Statement is sent', 'E-statement has been mailed', 'statement is now available') - money OWED, not moved. The parser scrubs matched spans before transaction detection and vetoes rule-extract transactions.",
+      "patterns": [
+        "(?i)\\b(?:e-?)?statement\\s+(?:is|has\\s+been|was)\\s+(?:sent|generated|mailed|e-?mailed|dispatched)",
+        "(?i)\\b(?:e-?)?statement\\s+of\\b[^\\n]{0,80}?\\bhas\\s+been\\s+(?:sent|mailed|e-?mailed)",
+        "(?i)\\b(?:e-?)?statement\\s+(?:is\\s+)?(?:now\\s+)?(?:available|ready)\\b"
+      ]
+    },
+    {
+      "id": "bill_due_notice",
+      "description": "Bill-due notices ('Payment of INR X ... is due on <date>') and reminder advisories ('Kindly ignore if paid') - a FUTURE obligation, never a completed debit. Rejects the transaction outright; the reminder pipeline handles the message instead. The 'ignore if paid' advisory only ever appears on reminders (a completed debit alert never asks you to ignore it), and its 'paid' verb otherwise satisfies the debit heuristics.",
+      "patterns": [
+        "(?i)\\b(?:payment|bill)\\s+of\\s+(?:INR|Rs\\.?|\\u20b9)\\s*[\\d,]+(?:\\.\\d{1,2})?[^\\n]{0,100}?\\bis\\s+due\\b",
+        "(?i)\\bignore\\s+if\\s+(?:already\\s+)?paid\\b"
+      ]
+    },
+    {
+      "id": "failed_payment",
+      "description": "Failed / declined / unsuccessful payment language. No money moved, so such a message must never yield a transaction - from the parser or from rule extracts.",
+      "patterns": [
+        "(?i)\\bhas\\s+failed\\b",
+        "(?i)\\b(?:payment|transaction|txn|transfer|recharge)\\s+(?:has\\s+|was\\s+)?failed\\b",
+        "(?i)\\bcould\\s+not\\s+be\\s+(?:processed|completed)\\b",
+        "(?i)\\b(?:was\\s+)?declined\\b",
+        "(?i)\\bunsuccessful\\b"
+      ]
+    },
+    {
+      "id": "settled_payment",
+      "description": "Completed / settled / reversed events (payments received, thank-you-for-payment confirmations, refunds, reimbursement claims, debit/credit confirmations). Money already moved (or is coming back) - never a reminder. 'will/shall/would be debited' is exempted via fixed-length lookbehinds: a future-tense debit ('Rs 59 will be debited on 03-Jul') is an upcoming obligation, exactly what reminders exist for.",
+      "patterns": [
+        "(?i)payment\\s+(?:of\\s+\\S{0,20}\\s*)?(?:received|successful|processed)",
+        "(?i)\\breceived\\s+(?:your\\s+)?payment",
+        "(?i)successfully\\s+(?:paid|processed|credited|received)",
+        "(?i)\\bpaid\\s+successfully",
+        "(?i)thank\\s+you\\s+for\\s+(?:an?\\s+|your\\s+)?(?:online\\s+)?(?:payment|paying)",
+        "(?i)payment\\s+of\\s+(?:INR|Rs\\.?|\\u20b9)\\s*(?:Dr\\.?\\s*)?[\\d,]+(?:\\.\\d{1,2})?[^\\n]{0,80}?(?:transaction\\s+ref|txn\\s+ref|\\bUTR\\b)",
+        "(?i)payment\\s+of\\s+(?:INR|Rs\\.?|\\u20b9)\\s*(?:Dr\\.?\\s*)?[\\d,]+(?:\\.\\d{1,2})?[^\\n]{0,60}?\\bwas\\s+(?:received|made)",
+        "(?i)has\\s+been\\s+(?:paid|received|credited|processed|settled|reimbursed|refunded)",
+        "(?i)\\breimburse(?:d|ment)\\b",
+        "(?i)\\brefund(?:ed)?\\b",
+        "(?i)\\bsettled\\b",
+        "(?i)\\bclaim\\s+(?:of|amount|no\\.?|number|id)\\b",
+        "(?i)(?<!will be )(?<!shall be )(?<!would be )\\bdebited\\b",
+        "(?i)\\bcredited\\b"
+      ]
+    },
+    {
+      "id": "marketing_pitch",
+      "description": "Investment / upsell sales-pitch language. A payment ask embedded in a pitch ('investment in ULIPs can reap benefits') is an upsell, not an obligation - never a reminder even with a premium and a date in the body.",
+      "patterns": [
+        "(?i)\\breap\\s+benefits?\\b",
+        "(?i)\\brising\\s+(?:capital\\s+|stock\\s+)?markets?\\b",
+        "(?i)\\bwealth\\s+creation\\b",
+        "(?i)\\bmarket[-\\s]linked\\s+returns?\\b",
+        "(?i)\\bgrow\\s+your\\s+(?:money|wealth|savings)\\b",
+        "(?i)\\bwhy\\s+invest\\b",
+        "(?i)\\bbest\\s+time\\s+to\\s+invest\\b",
+        "(?i)\\binvest\\s+today\\b",
+        "(?i)\\bstart\\s+investing\\b"
+      ]
+    },
+    {
+      "id": "voucher",
+      "description": "Voucher / coupon / gift-card grants. Their expiry date is a benefit lapsing, not money the user owes - never a reminder.",
+      "patterns": [
+        "(?i)\\bvouchers?\\b",
+        "(?i)\\bcoupons?\\b",
+        "(?i)\\bgift\\s*card\\b",
+        "(?i)\\bpromo\\s+code\\b"
+      ]
+    },
+    {
+      "id": "hypothetical_amount",
+      "description": "Per-unit / hypothetical amounts in marketing pitches ('earn 3 pts on every Rs 100 spent', 'cashback per Rs 500 paid'). The amount is an example rate, not money that moved - the transaction parser scrubs matched spans (amount AND its trailing spend verb) before detection, so a rewards pitch can never fabricate a debit.",
+      "patterns": [
+        "(?i)\\b(?:on\\s+|for\\s+)?every\\s+(?:INR|Rs\\.?|\\u20b9)\\s*[\\d,]+(?:\\.\\d{1,2})?(?:\\s+(?:spent|paid|charged|loaded))?",
+        "(?i)\\bper\\s+(?:INR|Rs\\.?|\\u20b9)\\s*[\\d,]+(?:\\.\\d{1,2})?(?:\\s+(?:spent|paid|charged))?"
+      ]
+    },
+    {
+      "id": "mandate_notice",
+      "description": "UPI Autopay / e-mandate lifecycle notices ('Mandate ... successfully created/cancelled'). They quote the mandate's amount but no money moved - never promoted as a transaction; surfaced as an IMPORTANT bank alert.",
+      "patterns": [
+        "(?i)\\bmandate\\b[\\s\\S]{0,60}?\\bsuccessfully\\s+(?:created|cancelled|revoked|modified)\\b",
+        "(?i)\\bsuccessfully\\s+cancelled\\s+the\\s+scheduled\\b[\\s\\S]{0,60}?\\bpayment\\b",
+        "(?i)\\bmandate\\s+(?:has\\s+been|is|was)\\s+(?:created|cancelled|revoked|modified)\\b"
+      ]
+    },
+    {
+      "id": "collect_request",
+      "description": "UPI collect / payment-request notices ('You've received an IPO request from X for up to Rs.Y. Click to accept', 'A has requested Rs.B from your account', 'approve to pay', IPO mandate funds-blocked confirmations). Money is only being ASKED for - or blocked pending an IPO allotment - so nothing moved: the message must never yield a transaction, from the parser or from rule extracts; it surfaces as an IMPORTANT bank alert with its figure rendered unsigned. The APPROVED request's later execution arrives as its own 'debited' message and parses then - the blocked-shape patterns therefore stand down (bounded lookahead) when a completed 'debited' follows.",
+      "patterns": [
+        "(?i)\\breceived\\s+an?\\s+(?:payment|collect|money|IPO|UPI)\\s+(?:mandate\\s+)?request\\b",
+        "(?i)\\b(?:payment|collect)\\s+request\\b",
+        "(?i)\\b(?:has|is)\\s+request(?:ed|ing)\\s+(?:money\\b|payment\\b|(?:INR|Rs\\.?|\\u20b9)\\s*[\\d,]+)",
+        "(?i)\\bapprove\\s+to\\s+pay\\b",
+        "(?i)\\brequest\\b[^\\n]{0,80}?\\bclick\\s+to\\s+accept\\b",
+        "(?i)\\bblock(?:ed)?\\s+(?:for|towards)\\s+(?:the\\s+)?IPO\\b(?![^\\n]{0,120}?\\bdebited\\b)",
+        "(?i)\\bmandate\\b[^\\n]{0,60}?\\b(?:successfully\\s+)?blocked\\b(?![^\\n]{0,120}?\\bdebited\\b)"
+      ]
+    },
+    {
+      "id": "limit_offer",
+      "description": "Credit-limit increase OFFERS ('eligible for', 'pre-approved', 'can be increased to') - money the user does not have yet. Must never set a card's total limit.",
+      "patterns": [
+        "(?i)\\b(?:eligible|pre-?approved|can\\s+be\\s+(?:increased|enhanced)|to\\s+avail|avail\\s+now|apply\\s+now)\\b"
+      ]
+    },
+    {
+      "id": "tier_premium",
+      "description": "'Premium' as a PRODUCT TIER ('<Brand> Premium subscription/plan') rather than an insurance premium. Suppresses premium-based insurance evidence in reminder typing.",
+      "patterns": [
+        "(?i)\\b[\\w&+.]+\\s+premium\\s+(?:subscription|plan|membership|pack|account|is\\s+now\\s+active)\\b"
+      ]
+    },
+    {
+      "id": "future_tense",
+      "description": "Future / conditional tense directly before a debit/credit keyword ('will be deducted') - money that has NOT moved yet. Consulted against the short window preceding a keyword match, hence the trailing anchor.",
+      "patterns": [
+        "(?i)\\b(?:will|shall|would)\\s+be\\s*$"
+      ]
+    },
+    {
+      "id": "instruction_start",
+      "description": "Instruction verbs starting a would-be merchant capture ('to know the transaction status', 'to avoid late fees') - link / call-to-action phrasing, never a merchant name. Anchored to the start of the candidate.",
+      "patterns": [
+        "(?i)^(?:know|check|view|track|see|get|download|install|update|complete|continue|avoid|claim|apply|visit|click|login)\\b"
+      ]
+    },
+    {
+      "id": "retirement_units_echo",
+      "description": "Retirement-scheme units-credited confirmations ('Your contribution of Rs.X has been credited to your NPS Tier-I a/c ... valuation ... is Rs.Y'). The SAME contribution was already announced (and recorded as the credit) by the PRAN-tailed fund-confirmation SMS - a second credit here double-counts the money. The message never yields a transaction; its valuation refreshes the scheme account's balance instead.",
+      "patterns": [
+        "(?i)\\bcontribution\\s+of\\s+(?:INR|Rs\\.?|\\u20b9)\\s*[\\d,]+(?:\\.\\d{1,2})?\\s+has\\s+been\\s+credited\\s+to\\s+your\\s+NPS\\b"
+      ]
+    },
+    {
+      "id": "payout_in_flight",
+      "description": "Refund / payout lifecycle notices where money is COMING but has not landed. 'Refund' is itself a credit keyword, so without this veto the notice would fabricate a credit that the receiving bank's own SMS later records again (double count). Two deliberately narrow shapes: (1) 'refund ... initiated' - nothing has been processed yet, never a credit; (2) a card CREDIT-BALANCE refund initiated/processed - the quoted tail is the CARD's, but the money lands in a different (bank) account, so a credit derived here is both a double count and a misattribution. A merchant refund 'processed to your account ... will be credited by <date>' deliberately stays OUT of this guard: the repo's precedent records that refund at the merchant's confirmation (see the Flipkart refund fixtures).",
+      "patterns": [
+        "(?i)\\brefund\\b[^\\n]{0,100}?\\binitiated\\b",
+        "(?i)\\brefund\\b[^\\n]{0,60}?\\bcredit\\s+balance\\b[^\\n]{0,120}?\\b(?:initiated|processed)\\b"
+      ]
+    },
+    {
+      "id": "financial_evidence",
+      "description": "POSITIVE financial-correspondence markers - transactional artifacts, never amounts alone: folio / UTR / SR / service-request identifiers, units-allotted and NAV figures, instalment/redemption/settlement processed verbs, refund lifecycle verbs, TDS period summaries, masked PAN references, IFSC codes, 'payment ... recorded' ledger entries, and order-number-plus-amount confirmations. The categorizer demotes a PROMOTIONAL result to IMPORTANT when any of these fire (and no marketing pitch does): financial content must never classify promotional. A promo legitimately quotes money ('cashback up to Rs.500', 'loan @10.5%'), so every pattern here anchors on an artifact or a processed/initiated verb - an amount by itself is never evidence.",
+      "patterns": [
+        "(?i)\\bfolio\\s+(?:no\\.?|number|#)?\\s*[:#-]?\\s*[A-Z0-9][A-Z0-9/]{3,19}\\b",
+        "(?i)\\bUTR\\b\\s*[:#-]?\\s*[A-Za-z0-9]{8,22}\\b",
+        "(?i)\\bSR\\s*(?:no\\.?|number|#)?\\s*[:#-]?\\s*\\d{6,20}\\b",
+        "(?i)\\bNAV\\s+(?:of\\s+)?(?:INR|Rs\\.?|\\u20b9)\\s*[\\d,]+(?:\\.\\d{1,4})?",
+        "(?i)\\b[\\d,]+(?:\\.\\d{1,4})?\\s+units\\s+allotted\\b",
+        "(?i)\\bunits\\s+allotted\\s*[:#-]?\\s*[\\d,]+(?:\\.\\d{1,4})?\\b",
+        "(?i)\\binsta?l?lment\\b[^\\n]{0,80}?\\bprocessed\\b",
+        "(?i)\\brefund\\b[^\\n]{0,100}?\\b(?:initiated|processed)\\b",
+        "(?i)\\bredemption\\b[^\\n]{0,100}?\\b(?:processed|accepted)\\b",
+        "(?i)\\bsettlement\\b[^\\n]{0,100}?\\b(?:processed|completed|credited)\\b",
+        "(?i)\\bTDS\\b[^\\n]{0,120}?\\b(?:FY|F\\.?Y\\.?|Qtr|quarter|Q[1-4])\\b",
+        "(?i)\\bPAN\\b\\s*[:#-]?\\s*[A-Z0-9Xx*]{10}\\b",
+        "(?i)\\bIFSC\\b\\s*[:#-]?\\s*[A-Z]{4}0[A-Z0-9]{6}\\b",
+        "(?i)\\bpayment\\s+of\\s+(?:INR|Rs\\.?|\\u20b9)\\s*[\\d,]+(?:\\.\\d{1,2})?[^\\n]{0,80}?\\brecorded\\b",
+        "(?i)\\border\\b[^\\n]{0,30}?(?:no\\.?|number|#|id)\\s*[:#-]?\\s*[A-Za-z0-9-]{4,20}\\b[^\\n]{0,80}?(?:INR|Rs\\.?|\\u20b9)\\s*[\\d,]+(?:\\.\\d{1,2})?",
+        "(?i)\\bstatement\\b[^\\n]{0,60}?\\b(?:is\\s+)?generated\\b",
+        "(?i)\\bmin(?:imum)?\\s+due\\s*[:#-]?\\s*(?:INR|Rs\\.?|\\u20b9)\\s*[\\d,]+(?:\\.\\d{1,2})?"
+      ]
+    }
+  ]
+}

@@ -7,6 +7,7 @@ import {
   INVESTMENT_PATTERNS
 } from './financialKnowledgeBase';
 import { CategoryRuleEngine } from '../services/categoryRuleEngine';
+import { MessageCategorizer } from '../services/clearsms/messageCategorizer';
 
 export interface ParsedExpenseMessage {
   type: TransactionType;
@@ -154,6 +155,90 @@ export function parseTransactionMessage(
   // 2. Strict Reminder, Bill Notice, Statement & Insurance Renewal Filter (ClearSMS Guards)
   if (isReminderOrDueNotice(clean)) {
     return null;
+  }
+
+  // 2.5 ClearSMS 465-Rule Engine & Invariant Pipeline (Bank-grade precision)
+  const clearsmsRes = MessageCategorizer.process(options?.sender || '', clean);
+
+  if (clearsmsRes.isOtp) {
+    return null; // Anchored OTP with quoted amount vetoed
+  }
+
+  if (clearsmsRes.isTransaction && clearsmsRes.amount) {
+    const { date, time } = extractDateAndTime(clean, options?.timestamp);
+    const initialFlowType: TransactionType = clearsmsRes.type === 'credit' ? 'income' : 'expense';
+
+    // Normalize category to Expense Diary AI taxonomy
+    let cat = clearsmsRes.category || (initialFlowType === 'income' ? 'Other Income' : 'Other Expense');
+    if (cat === 'important' || cat === 'Other' || cat === 'Other Expense' || cat === 'Other Income') {
+      const kb = categorizeFinancialText(clean, options?.sender);
+      if (kb?.category && kb.category !== 'Other') {
+        cat = kb.category;
+      }
+    }
+    const cLower = (typeof cat === 'string' ? cat : 'Other').toLowerCase();
+    if (cLower.includes('invest') || cLower.includes('mutual') || cLower.includes('nps') || cLower.includes('sip') || cLower.includes('pran')) {
+      cat = 'Investment';
+    } else if (cLower.includes('salar') || cLower.includes('payroll')) {
+      cat = 'Salary';
+    } else if (cLower.includes('food') || cLower.includes('dining') || cLower.includes('swiggy') || cLower.includes('zomato')) {
+      cat = 'Food & Dining';
+    } else if (cLower.includes('shop') || cLower.includes('amazon') || cLower.includes('flipkart') || cLower.includes('myntra')) {
+      cat = 'Shopping';
+    } else if (cLower.includes('grocer')) {
+      cat = 'Groceries';
+    } else if (cLower.includes('travel') || cLower.includes('transport') || cLower.includes('fuel') || cLower.includes('uber') || cLower.includes('ola') || cLower.includes('irctc')) {
+      cat = 'Travel & Fuel';
+    } else if (cLower.includes('bill') || cLower.includes('util') || cLower.includes('recharg') || cLower.includes('electric')) {
+      cat = 'Bills & Utilities';
+    } else if (cLower.includes('insuran')) {
+      cat = 'Insurance';
+    } else if (cLower.includes('health') || cLower.includes('medic') || cLower.includes('hospital')) {
+      cat = 'Health & Medicines';
+    } else if (cLower.includes('transfer') || cLower.includes('p2p')) {
+      cat = 'Transfer';
+    } else if (cLower.includes('entertain')) {
+      cat = 'Entertainment';
+    } else if (cLower.includes('educat')) {
+      cat = 'Education';
+    }
+
+    let flowType: TransactionType = clearsmsRes.type === 'credit' ? 'income' : 'expense';
+    if (cat === 'Investment') {
+      flowType = 'expense'; // In personal finance, NPS contributions & SIPs are investment outflows
+    }
+
+    let title = clearsmsRes.title || clearsmsRes.merchantName || clearsmsRes.bankName || (flowType === 'income' ? 'Money Received' : 'Expense');
+    if (cat === 'Investment') {
+      if (clean.toUpperCase().includes('NPS') || clean.toUpperCase().includes('PRAN')) {
+        title = 'NPS Contribution (રોકાણ)';
+      } else if (clean.toUpperCase().includes('SIP') || clean.toUpperCase().includes('MUTUAL')) {
+        title = clearsmsRes.merchantName || 'Mutual Fund SIP';
+      }
+    } else if (cat === 'Salary') {
+      title = 'Salary Credit (પગાર જમા)';
+    }
+
+    const bankOrSource = clearsmsRes.bankName || extractBankOrSource(options?.sender, clean);
+    const accountInfo = clearsmsRes.accountLast4 ? `A/c *${clearsmsRes.accountLast4}` : undefined;
+
+    return {
+      type: flowType,
+      amount: clearsmsRes.amount,
+      title,
+      category: cat,
+      vendorOrPerson: clearsmsRes.merchantName,
+      paymentMode: clearsmsRes.bankName?.includes('Card') ? 'Credit Card' : 'Bank/UPI',
+      referenceNumber: clearsmsRes.referenceNumber,
+      accountInfo,
+      date,
+      time,
+      bankOrSource,
+      evidence: clean,
+      evidenceSource: source,
+      confidence: 0.99,
+      needsReview: false,
+    };
   }
 
   // 3. ClearSMS Balance & Credit Limit Exclusion (Prevents Avl Bal or Avl Lmt from becoming transaction amount)
