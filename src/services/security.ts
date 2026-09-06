@@ -1,20 +1,6 @@
 import { BIP39_WORDLIST } from './bip39Words';
-
-// Convert buffer to hex string
-function buf2hex(buffer: ArrayBuffer): string {
-  return Array.from(new Uint8Array(buffer))
-    .map((b) => b.toString(16).padStart(2, '0'))
-    .join('');
-}
-
-// Convert hex string to Uint8Array
-function hex2buf(hex: string): Uint8Array {
-  const bytes = new Uint8Array(hex.length / 2);
-  for (let i = 0; i < hex.length; i += 2) {
-    bytes[i / 2] = parseInt(hex.substring(i, i + 2), 16);
-  }
-  return bytes;
-}
+import { buf2hex, hex2buf } from '../utils/bytes';
+import { NativeBridgeService } from './nativeBridge';
 
 // Generate random salt hex
 export function generateRandomSalt(byteLength = 16): string {
@@ -110,7 +96,7 @@ export async function hashWithPBKDF2(
 
   return {
     hash: buf2hex(derivedBits),
-    salt: buf2hex(salt.buffer as ArrayBuffer),
+    salt: buf2hex(salt.buffer),
   };
 }
 
@@ -124,8 +110,6 @@ export async function verifyPBKDF2(
   const { hash } = await hashWithPBKDF2(input, saltHex, iterations);
   return hash.toLowerCase() === expectedHash.toLowerCase();
 }
-
-import { NativeBridgeService } from './nativeBridge';
 
 // Biometrics prompt using Native Android BiometricPrompt or WebAuthn platform authenticator
 export async function isBiometricsAvailable(): Promise<boolean> {

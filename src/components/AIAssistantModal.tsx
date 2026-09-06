@@ -166,7 +166,6 @@ export const AIAssistantModal: React.FC<AIAssistantModalProps> = ({
 
     const lower = textToParse.toLowerCase();
     const isCredited = /credited|deposited|received|જમા|મળ્યા|credited with/i.test(lower);
-    const isDebited = /debited|spent|paid|payment of|transfer to|ચૂકવ્યા|કપાયા/i.test(lower);
 
     // Extract amount
     const amtMatch = textToParse.match(/(?:rs\.?|inr|inr\.?)\s*([\d,]+(?:\.\d{2})?)/i) ||
@@ -221,10 +220,6 @@ export const AIAssistantModal: React.FC<AIAssistantModalProps> = ({
     setSmsStatus(isGu ? 'મેસેજ સફળતાપૂર્વક પાર્સ થયો! હોમ સ્ક્રીન પર કન્ફર્મેશન કાર્ડ ઉમેરાઈ ગયું છે.' : 'Transaction detected! Confirmation card has been added to Home Screen.');
     setSmsInput('');
   };
-
-  // Spending calculations for Financial Advisor
-  const totalExpense = transactions.filter(t => t.type === 'expense').reduce((sum, t) => sum + t.amount, 0);
-  const totalIncome = transactions.filter(t => t.type === 'income').reduce((sum, t) => sum + t.amount, 0);
 
   // Category breakdown
   const categoryTotals: Record<string, number> = {};

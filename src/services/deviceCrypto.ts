@@ -13,6 +13,7 @@
  * All crypto runs in WebCrypto (available on https / localhost / Capacitor https).
  */
 import { AppVaultData } from './vaultStorage';
+import { buf2hex, hex2buf, buf2base64, base64ToBytes } from '../utils/bytes';
 
 const BLOB_KEY = 'expense_diary_device_enc';
 const FLAG_KEY = 'expense_diary_device_enc_flag';
@@ -33,34 +34,6 @@ interface DeviceEnvelope {
   iv: string; // hex
   cipherText: string; // base64
   syncedAt: string;
-}
-
-function buf2hex(buffer: ArrayBuffer): string {
-  return Array.from(new Uint8Array(buffer)).map((b) => b.toString(16).padStart(2, '0')).join('');
-}
-
-function hex2buf(hex: string): Uint8Array {
-  const bytes = new Uint8Array(hex.length / 2);
-  for (let i = 0; i < hex.length; i += 2) {
-    bytes[i / 2] = parseInt(hex.substring(i, i + 2), 16);
-  }
-  return bytes;
-}
-
-function buf2base64(buffer: ArrayBuffer): string {
-  const bytes = new Uint8Array(buffer);
-  let binary = '';
-  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
-  const btoaFn = (globalThis as any).btoa;
-  return typeof btoaFn === 'function' ? btoaFn(binary) : '';
-}
-
-function base642buf(base64: string): ArrayBuffer {
-  const atobFn = (globalThis as any).atob;
-  const binary = typeof atobFn === 'function' ? atobFn(base64) : '';
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-  return bytes.buffer;
 }
 
 async function passphraseToKey(words: string[], salt: Uint8Array, iterations: number): Promise<CryptoKey> {
@@ -99,7 +72,7 @@ export interface DeviceUnlockResult {
 }
 
 function base642RawKey(b64: string): Uint8Array {
-  return new Uint8Array(base642buf(b64));
+  return base64ToBytes(b64);
 }
 
 function importAesKey(raw: Uint8Array): Promise<CryptoKey> {
@@ -115,7 +88,7 @@ async function decryptWithKey(blob: string, key: CryptoKey): Promise<AppVaultDat
     throw new Error('Corrupt or unsupported device vault header.');
   }
   const iv = hex2buf(envelope.iv);
-  const decrypted = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, base642buf(envelope.cipherText));
+  const decrypted = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, base64ToBytes(envelope.cipherText));
   return JSON.parse(new TextDecoder().decode(decrypted)) as AppVaultData;
 }
 

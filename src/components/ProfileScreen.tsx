@@ -6,8 +6,7 @@ import {
   Target, 
   Camera, 
   CheckCircle2, 
-  Clock,
-  Bell
+  Clock
 } from 'lucide-react';
 import { UserProfile, Transaction } from '../types';
 import { TranslationStrings } from '../data/languages';

@@ -8,13 +8,11 @@ import {
   Layers, 
   Search, 
   Check, 
-  CheckSquare, 
   ShieldCheck,
   DownloadCloud,
-  Filter,
-  X
+  Filter
 } from 'lucide-react';
-import { Transaction, Category, ReportPeriod, LayoutStyle, PageTheme } from '../types';
+import { Transaction, Category, ReportPeriod, LayoutStyle } from '../types';
 import { TranslationStrings } from '../data/languages';
 import { NativeBridgeService } from '../services/nativeBridge';
 
@@ -66,7 +64,6 @@ export const ReportScreen: React.FC<ReportScreenProps> = ({
 
   // 5. Layout options: STRICTLY Box and Minimal Card
   const [layoutStyle, setLayoutStyle] = useState<LayoutStyle>('box');
-  const [pageTheme, setPageTheme] = useState<PageTheme>('paper');
 
   const [exportNotice, setExportNotice] = useState<string | null>(null);
   const [exportModalType, setExportModalType] = useState<'pdf' | 'excel' | null>(null);

@@ -54,7 +54,8 @@ export const MessageCategorizer = {
     }
 
     // Stage 1: User Dynamic Rules (Learned from user modifications)
-    const userCategoryResult = CategoryRuleEngine.evaluate(body, sender);
+    // NOTE: CategoryRuleEngine.evaluate(sender, text) — argument order matters!
+    const userCategoryResult = CategoryRuleEngine.evaluate(sender, body);
     const hasUserRule =
       userCategoryResult !== null &&
       userCategoryResult.category !== 'Other' &&

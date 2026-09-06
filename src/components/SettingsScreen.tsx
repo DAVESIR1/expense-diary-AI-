@@ -1,53 +1,40 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { 
-  Globe, 
-  Palette, 
-  Type, 
-  FolderPlus, 
-  DownloadCloud, 
-  Upload, 
-  Trash2, 
-  Plus, 
-  Coins, 
-  Database, 
-  ShieldCheck, 
-  Check, 
-  Lock, 
-  Key, 
-  Cloud, 
-  Info, 
-  Eye, 
-  EyeOff, 
-  AlertCircle, 
+import {
+  Globe,
+  Palette,
+  Type,
+  FolderPlus,
+  Trash2,
+  Plus,
+  Coins,
+  ShieldCheck,
+  Check,
+  Lock,
+  Key,
+  Info,
+  Eye,
+  AlertCircle,
   RefreshCw,
-  Layers,
-  Share2,
   Mail,
-  Tag
+  Tag,
+  Archive,
+  ArchiveRestore,
+  FileUp
 } from 'lucide-react';
 import { LANGUAGES, TranslationStrings } from '../data/languages';
 import { Category, Transaction, UserProfile, SecurityConfig, DiaryEntry, BorrowedLentRecord } from '../types';
 import { SAMPLE_TRANSACTIONS } from '../data/initialData';
 import { usePWAInstall } from '../hooks/usePWAInstall';
-import { 
-  encryptPayload, 
-  decryptPayload, 
-  downloadEncryptedBackup, 
-  EncryptedBackupEnvelope 
-} from '../services/encryption';
-import { 
-  defaultCloudProvider, 
-  CloudBackupMetadata 
-} from '../services/cloudBackup';
-import { verifyPBKDF2, normalizeWords } from '../services/security';
+import { verifyPBKDF2 } from '../services/security';
 import { SecuritySetupModal } from './SecuritySetupModal';
-import { MultiRestoreModal } from './MultiRestoreModal';
 import { NativeBridgeService, NativePermissionsStatus } from '../services/nativeBridge';
-import { CloudSyncService, CloudSyncConfig } from '../services/cloudSync';
 import { AppVaultData, VaultStorage } from '../services/vaultStorage';
 import { DeviceEncryption } from '../services/deviceCrypto';
 import { parseClearSmsBackup } from '../services/clearSmsImporter';
 import { CategoryRuleEngine, RuleDefinition, BUILTIN_CATEGORY_RULES } from '../services/categoryRuleEngine';
+import { SafeVaultPayload, MergeStats, SafeVaultPrefs, cleanupLegacyBackupArtifacts } from '../services/safeVault';
+import { SafeVaultCreateModal } from './SafeVaultCreateModal';
+import { SafeVaultRestoreModal } from './SafeVaultRestoreModal';
 
 interface SettingsScreenProps {
   currentLang: string;
@@ -75,6 +62,8 @@ interface SettingsScreenProps {
   savedPassphraseWords: string[];
   onOpenSMSModal: () => void;
   onOpenEmailSync?: () => void;
+  onRestoreCategories?: (cats: Category[]) => void;
+  onRestorePreferences?: (prefs: SafeVaultPrefs) => void;
 }
 
 export const SettingsScreen: React.FC<SettingsScreenProps> = ({
@@ -102,9 +91,9 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   onUpdateSecurityConfig,
   savedPassphraseWords,
   onOpenEmailSync,
+  onRestoreCategories,
+  onRestorePreferences,
 }) => {
-  const { isInstallable, install } = usePWAInstall();
-  const [langSearch, setLangSearch] = useState('');
   const [newCatName, setNewCatName] = useState('');
   const [newCatType, setNewCatType] = useState<'income' | 'expense'>('expense');
   const [notificationMsg, setNotificationMsg] = useState<string | null>(null);
@@ -185,107 +174,23 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   const [passphraseVerified, setPassphraseVerified] = useState(false);
   const [passphraseError, setPassphraseError] = useState<string | null>(null);
 
-  // Restore Modal State (File or Cloud)
-  const restoreFileInputRef = useRef<HTMLInputElement>(null);
-  const [pendingRestoreEnvelope, setPendingRestoreEnvelope] = useState<EncryptedBackupEnvelope | null>(null);
-  const [restorePassphraseInput, setRestorePassphraseInput] = useState('');
-  const [restoreError, setRestoreError] = useState<string | null>(null);
-  const [isMultiRestoreOpen, setIsMultiRestoreOpen] = useState(false);
-  const [isRestoring, setIsRestoring] = useState(false);
-  const [isBackupInfoOpen, setIsBackupInfoOpen] = useState(false);
+  // SafeVault — unified encrypted backup & restore
+  const [isSafeCreateOpen, setIsSafeCreateOpen] = useState(false);
+  const [isSafeRestoreOpen, setIsSafeRestoreOpen] = useState(false);
+  const smsImportInputRef = useRef<HTMLInputElement>(null);
 
-  // Cloud snapshots
-  const [cloudBackups, setCloudBackups] = useState<CloudBackupMetadata[]>([]);
-  const [isCloudUploading, setIsCloudUploading] = useState(false);
-
-  // Firebase Real-time Cloud Sync & Hidden Vault
-  const [cloudSyncConfig, setCloudSyncConfig] = useState<CloudSyncConfig>(CloudSyncService.getConfig());
-  const [isCloudSyncModalOpen, setIsCloudSyncModalOpen] = useState(false);
-  const [isSyncingNow, setIsSyncingNow] = useState(false);
-  const [cloudSyncNotice, setCloudSyncNotice] = useState<{ text: string; isError?: boolean } | null>(null);
-  const [tempProjectId, setTempProjectId] = useState(cloudSyncConfig.projectId || '');
-  const [tempAutoSync, setTempAutoSync] = useState(cloudSyncConfig.autoSync ?? true);
-  const [tempEnabled, setTempEnabled] = useState(cloudSyncConfig.enabled ?? false);
-  const [tempDocId, setTempDocId] = useState(cloudSyncConfig.userSyncId || 'my_primary_vault');
-
-  const isGu = currentLang === 'gu';
-
-  const handleSaveCloudSyncSettings = () => {
-    const updated = CloudSyncService.saveConfig({
-      enabled: tempEnabled,
-      projectId: tempProjectId.trim(),
-      userSyncId: tempDocId.trim() || 'my_primary_vault',
-      autoSync: tempAutoSync,
-    });
-    setCloudSyncConfig(updated);
-    setIsCloudSyncModalOpen(false);
-    showNotice(isGu ? 'ક્લાઉડ સેટિંગ્સ સફળતાપૂર્વક સાચવાયા!' : 'Cloud settings saved successfully!');
-  };
-
-  const handleTriggerCloudSync = async () => {
-    if (!cloudSyncConfig.enabled || !cloudSyncConfig.projectId?.trim()) {
-      setIsCloudSyncModalOpen(true);
-      return;
-    }
-    const recoveryWordsRaw = localStorage.getItem('expense_diary_recovery_words');
-    const words = recoveryWordsRaw ? JSON.parse(recoveryWordsRaw) : [];
-    if (!words || words.length < 12) {
-      alert(isGu ? 'કૃપા કરીને સિક્યોરિટી સેટઅપ પૂર્ણ કરી 12 શબ્દો મેળવો.' : 'Please complete security setup with 12 recovery words first.');
-      return;
-    }
-
-    setIsSyncingNow(true);
-    setCloudSyncNotice(null);
-    try {
-      const fullVaultData: AppVaultData = {
-        version: 2,
-        updatedAt: new Date().toISOString(),
-        transactions,
-        diaryEntries,
-        borrowedLentRecords,
-        categories,
-        profile,
-        securityConfig,
-        savedPassphraseWords: words,
-        lang: currentLang,
-        theme: activeTheme,
-        font: activeFont,
-        currency,
-        onboarded: true,
-      };
-      const res = await CloudSyncService.uploadVaultToCloud(fullVaultData, words);
-      if (res.success) {
-        setCloudSyncNotice({ text: isGu ? 'ક્લાઉડમાં ડેટા સફળતાપૂર્વક સિંક થયો!' : 'Data synced to cloud successfully!' });
-        setCloudSyncConfig(CloudSyncService.getConfig());
-      } else {
-        setCloudSyncNotice({ text: res.error || 'Sync failed', isError: true });
-      }
-    } catch (e: any) {
-      setCloudSyncNotice({ text: e.message || 'Sync error', isError: true });
-    } finally {
-      setIsSyncingNow(false);
-    }
-  };
-
+  // One-time cleanup of stale keys left behind by the retired backup systems.
   useEffect(() => {
-    loadCloudBackups();
+    cleanupLegacyBackupArtifacts();
   }, []);
 
-  const loadCloudBackups = async () => {
-    try {
-      const list = await defaultCloudProvider.listBackups();
-      setCloudBackups(list);
-    } catch {
-      // ignore
-    }
-  };
+  const isGu = currentLang === 'gu';
 
   const showNotice = (msg: string) => {
     setNotificationMsg(msg);
     setTimeout(() => setNotificationMsg(null), 3500);
   };
 
-  // User Category Rules & Re-run (ClearSMS Pattern)
   const [userCategoryRules, setUserCategoryRules] = useState<RuleDefinition[]>(() => CategoryRuleEngine.getUserRules());
   const [ruleKeyword, setRuleKeyword] = useState('');
   const [ruleTargetCategory, setRuleTargetCategory] = useState(categories[0]?.name || 'Shopping');
@@ -332,13 +237,6 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
     showNotice(isGu ? 'રૂલ હટાવવામાં આવ્યો.' : 'Rule deleted.');
   };
 
-  const filteredLanguages = LANGUAGES.filter(
-    (l) =>
-      l.name.toLowerCase().includes(langSearch.toLowerCase()) ||
-      l.nativeName.toLowerCase().includes(langSearch.toLowerCase()) ||
-      l.code.toLowerCase().includes(langSearch.toLowerCase())
-  );
-
   const handleCreateCategory = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newCatName.trim()) return;
@@ -357,146 +255,63 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
     showNotice(isGu ? 'કેટેગરી સફળતાપૂર્વક ઉમેરાઈ!' : 'Category added successfully!');
   };
 
-  // 1. Export Encrypted Local Backup (.edb) using AES-GCM 256-bit
-  const handleExportEncryptedBackup = async () => {
-    try {
-      const passphrase =
-        savedPassphraseWords.length > 0
-          ? savedPassphraseWords.join(' ')
-          : prompt(
-              isGu
-                ? 'બેકઅપને એન્ક્રિપ્ટ કરવા માટે તમારો ગુપ્ત પાસવર્ડ દાખલ કરો:'
-                : 'Enter a passphrase to encrypt your backup:'
-            );
 
-      if (!passphrase) return;
+  // ── SafeVault: unified encrypted backup & restore (v3) ────────────────────
+  const safeVaultCurrent: SafeVaultPayload = {
+    transactions,
+    diaryEntries,
+    borrowedLentRecords,
+    categories,
+    profile,
+    prefs: { lang: currentLang, theme: activeTheme, font: activeFont, currency },
+  };
 
-      const fullBackupData = {
-        version: '2.0.0',
-        exportedAt: new Date().toISOString(),
-        profile,
-        categories,
-        transactions,
-        diaryEntries,
-        borrowedLentRecords,
-        securityConfig: {
-          ...securityConfig,
-          isLocked: false,
-        },
-      };
-
-      const envelope = await encryptPayload(fullBackupData, passphrase);
-      const savedFilename = await downloadEncryptedBackup(envelope, 'expense-diary-encrypted');
-      showNotice(
-        isGu
-          ? `સુરક્ષિત બેકઅપ ફાઈલ (${savedFilename}) Downloads ફોલ્ડરમાં સેવ થઈ ગઈ!`
-          : `Encrypted backup (${savedFilename}) saved to Downloads folder!`
-      );
-    } catch (err: any) {
-      alert(err.message || 'Error generating encrypted backup.');
+  const applyVaultStats = (stats: MergeStats) => {
+    onRestoreTransactions(stats.mergedTransactions);
+    onRestoreDiaryEntries(stats.mergedDiaryEntries);
+    if (onRestoreBorrowedLentRecords) {
+      onRestoreBorrowedLentRecords(stats.mergedBorrowLend);
+    }
+    if (onRestoreCategories) {
+      onRestoreCategories(stats.mergedCategories);
+    }
+    if (stats.mergedProfile) {
+      onUpdateProfile(stats.mergedProfile);
+    }
+    if (stats.prefsApplied && onRestorePreferences) {
+      onRestorePreferences(stats.mergedPrefs);
     }
   };
 
-  // 1b. Share Encrypted Backup (.edb) directly via WhatsApp / Drive / Email
-  const handleShareEncryptedBackup = async () => {
-    try {
-      const passphrase =
-        savedPassphraseWords.length > 0
-          ? savedPassphraseWords.join(' ')
-          : prompt(
-              isGu
-                ? 'બેકઅપને એન્ક્રિપ્ટ કરવા માટે તમારો ગુપ્ત પાસવર્ડ દાખલ કરો:'
-                : 'Enter a passphrase to encrypt your backup:'
-            );
-
-      if (!passphrase) return;
-
-      const fullBackupData = {
-        version: '2.0.0',
-        exportedAt: new Date().toISOString(),
-        profile,
-        categories,
-        transactions,
-        diaryEntries,
-        borrowedLentRecords,
-        securityConfig: {
-          ...securityConfig,
-          isLocked: false,
-        },
-      };
-
-      const envelope = await encryptPayload(fullBackupData, passphrase);
-      const json = JSON.stringify(envelope, null, 2);
-      const dateStr = new Date().toISOString().split('T')[0];
-      const filename = `expense-diary-backup-${dateStr}.edb`;
-
-      const shared = await NativeBridgeService.shareFile({
-        fileName: filename,
-        textContent: json,
-        mimeType: 'application/octet-stream',
-        title: isGu ? 'ખર્ચ ડાયરી એન્ક્રિપ્ટેડ બેકઅપ' : 'Expense Diary Encrypted Backup'
-      });
-
-      if (shared.success) {
-        showNotice(isGu ? 'બેકઅપ સફળતાપૂર્વક શેર થયું!' : 'Backup successfully shared!');
-      }
-    } catch (err: any) {
-      alert(err.message || 'Error sharing encrypted backup.');
-    }
-  };
-
-  // 2. Select file to restore
-  const handleFileSelectForRestore = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // ClearSMS App Backup (.json) import — re-homed from the retired restore flow.
+  const handleSmsImportFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-
     const reader = new FileReader();
     reader.onload = (ev) => {
       try {
         const text = ev.target?.result as string;
         const parsed = JSON.parse(text);
-
-        if (parsed.magic === 'EDBAES256') {
-          setPendingRestoreEnvelope(parsed as EncryptedBackupEnvelope);
-          setRestorePassphraseInput(savedPassphraseWords.join(' '));
-          setRestoreError(null);
-        } else if (parsed.formatVersion || Array.isArray(parsed.messages)) {
-          // ClearSMS App Backup File (.json)
-          const result = parseClearSmsBackup(text, transactions, categories);
-          if (result.success && result.newTransactions.length > 0) {
-            onRestoreTransactions([...transactions, ...result.newTransactions]);
-            showNotice(
-              isGu
-                ? `ClearSMS બેકઅપમાંથી ${result.newTransactions.length} વ્યવહારો સફળતાપૂર્વક ઉમેરાયા! (${result.duplicatesSkipped} ડુપ્લિકેટ્સ ફિલ્ટર થયા)`
-                : `Imported ${result.newTransactions.length} transactions from ClearSMS! (${result.duplicatesSkipped} duplicates skipped)`
-            );
-          } else if (result.success) {
-            alert(
-              isGu
-                ? `ClearSMS બેકઅપમાં કોઈ નવા ટ્રાન્ઝેક્શન મળ્યા નહીં (તમામ ${result.duplicatesSkipped} વ્યવહારો પહેલેથી મોજૂદ છે).`
-                : `No new transactions found in ClearSMS backup (${result.duplicatesSkipped} already exist).`
-            );
-          } else {
-            alert(result.errorMessage || 'Error importing ClearSMS backup');
-          }
-        } else if (Array.isArray(parsed.transactions)) {
-          // Backward compatibility with legacy plain JSON backup
-          onRestoreTransactions(parsed.transactions);
-          if (Array.isArray(parsed.diaryEntries)) onRestoreDiaryEntries(parsed.diaryEntries);
-          if (Array.isArray(parsed.borrowedLentRecords) && onRestoreBorrowedLentRecords) {
-            onRestoreBorrowedLentRecords(parsed.borrowedLentRecords);
-          }
-          if (Array.isArray(parsed.categories)) {
-            parsed.categories.forEach((cat: Category) => {
-              if (!categories.some(c => c.id === cat.id)) {
-                onAddCategory(cat);
-              }
-            });
-          }
-          if (parsed.profile) onUpdateProfile(parsed.profile);
-          showNotice(isGu ? 'ડેટા સફળતાપૂર્વક રીસ્ટોર થયો!' : 'Data restored successfully!');
+        if (!(parsed.formatVersion || Array.isArray(parsed.messages))) {
+          alert(isGu ? 'આ ClearSMS બેકઅપ ફાઇલ નથી.' : 'This is not a ClearSMS backup file.');
+          return;
+        }
+        const result = parseClearSmsBackup(text, transactions, categories);
+        if (result.success && result.newTransactions.length > 0) {
+          onRestoreTransactions([...transactions, ...result.newTransactions]);
+          showNotice(
+            isGu
+              ? `ClearSMS બેકઅપમાંથી ${result.newTransactions.length} વ્યવહારો ઉમેરાયા! (${result.duplicatesSkipped} ડુપ્લિકેટ્સ ફિલ્ટર થયા)`
+              : `Imported ${result.newTransactions.length} transactions from ClearSMS! (${result.duplicatesSkipped} duplicates skipped)`
+          );
+        } else if (result.success) {
+          alert(
+            isGu
+              ? `ClearSMS બેકઅપમાં કોઈ નવા વ્યવહારો મળ્યા નહીં (તમામ ${result.duplicatesSkipped} પહેલેથી મોજૂદ છે).`
+              : `No new transactions found in ClearSMS backup (${result.duplicatesSkipped} already exist).`
+          );
         } else {
-          alert(isGu ? 'અમાન્ય બેકઅપ ફાઈલ.' : 'Invalid backup file format.');
+          alert(result.errorMessage || 'Error importing ClearSMS backup');
         }
       } catch {
         alert(isGu ? 'બેકઅપ ફાઈલ વાંચવામાં ક્ષતિ.' : 'Failed to parse backup file.');
@@ -504,111 +319,6 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
     };
     reader.readAsText(file);
     e.target.value = '';
-  };
-
-  // 3. Decrypt and execute restore
-  const handleExecuteRestore = async () => {
-    if (!pendingRestoreEnvelope) return;
-    setIsRestoring(true);
-    setRestoreError(null);
-
-    try {
-      const normalized = normalizeWords(restorePassphraseInput);
-      const decrypted = await decryptPayload<{
-        transactions: Transaction[];
-        categories?: Category[];
-        profile?: UserProfile;
-        diaryEntries?: DiaryEntry[];
-        borrowedLentRecords?: BorrowedLentRecord[];
-      }>(pendingRestoreEnvelope, normalized);
-
-      if (Array.isArray(decrypted.transactions)) {
-        onRestoreTransactions(decrypted.transactions);
-      }
-      if (Array.isArray(decrypted.diaryEntries)) {
-        onRestoreDiaryEntries(decrypted.diaryEntries);
-      }
-      if (Array.isArray(decrypted.borrowedLentRecords) && onRestoreBorrowedLentRecords) {
-        onRestoreBorrowedLentRecords(decrypted.borrowedLentRecords);
-      }
-      if (Array.isArray(decrypted.categories)) {
-        decrypted.categories.forEach((cat: Category) => {
-          if (!categories.some(c => c.id === cat.id)) {
-            onAddCategory(cat);
-          }
-        });
-      }
-      if (decrypted.profile) {
-        onUpdateProfile(decrypted.profile);
-      }
-
-      setPendingRestoreEnvelope(null);
-      setRestorePassphraseInput('');
-      showNotice(
-        isGu
-          ? 'એન્ક્રિપ્ટેડ બેકઅપ સફળતાપૂર્વક ચકાસાઈને રીસ્ટોર થયો!'
-          : 'Encrypted backup successfully verified and restored!'
-      );
-    } catch (err: any) {
-      setRestoreError(
-        isGu
-          ? 'રિકવરી કી ખોટી છે અથવા ફાઈલ બગડી ગયેલ છે.'
-          : err.message || 'Decryption failed. Invalid passphrase.'
-      );
-    } finally {
-      setIsRestoring(false);
-    }
-  };
-
-  // 4. Cloud Backup (Zero-Knowledge Upload)
-  const handleUploadToCloudVault = async () => {
-    if (savedPassphraseWords.length === 0 && !securityConfig.recoveryWordsHash) {
-      alert(
-        isGu
-          ? 'ક્લાઉડ બેકઅપ પહેલાં સુરક્ષા સેટઅપ પૂર્ણ કરો.'
-          : 'Please complete security setup before cloud backup.'
-      );
-      return;
-    }
-
-    setIsCloudUploading(true);
-    try {
-      const passphrase = savedPassphraseWords.join(' ');
-      const payload = {
-        version: '2.0.0',
-        exportedAt: new Date().toISOString(),
-        profile,
-        categories,
-        transactions,
-        diaryEntries,
-        borrowedLentRecords,
-      };
-
-      const envelope = await encryptPayload(payload, passphrase);
-      await defaultCloudProvider.uploadEncryptedBackup(envelope);
-      await loadCloudBackups();
-      showNotice(
-        isGu
-          ? 'ઝીરો-નોલેજ ક્લાઉડ વોલ્ટમાં એન્ક્રિપ્ટેડ સ્નેપશોટ અપલોડ થઈ ગયો!'
-          : 'Encrypted snapshot uploaded to Zero-Knowledge Cloud Vault!'
-      );
-    } catch (err: any) {
-      alert(err.message || 'Cloud backup failed.');
-    } finally {
-      setIsCloudUploading(false);
-    }
-  };
-
-  // 5. Restore from Cloud Vault
-  const handleRestoreFromCloud = async (backupId: string) => {
-    try {
-      const envelope = await defaultCloudProvider.downloadEncryptedBackup(backupId);
-      setPendingRestoreEnvelope(envelope);
-      setRestorePassphraseInput(savedPassphraseWords.join(' '));
-      setRestoreError(null);
-    } catch (err: any) {
-      alert(err.message || 'Failed to download cloud snapshot.');
-    }
   };
 
   // View Passphrase Verification
@@ -854,91 +564,60 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
         </div>
 
       </div>
-
-      {/* 2. Encrypted Local & Cloud Backup Section (Tasks 13 & 14) */}
+      {/* 2. SafeVault — Unified Encrypted Backup & Restore */}
       <div
-        id="encrypted-backup-settings-card"
+        id="safevault-settings-card"
         className="p-5 sm:p-6 rounded-3xl bg-white border border-stone-200 shadow-xs space-y-4"
       >
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Database className="w-4 h-4 text-emerald-600 stroke-[2]" />
-            <h3 className="text-sm font-bold text-stone-800 tracking-tight">
-              {t.encryptedBackup} & {t.cloudVault}
-            </h3>
+        <div className="flex items-center gap-2.5">
+          <div className="p-2 rounded-xl bg-emerald-50 border border-emerald-200">
+            <ShieldCheck className="w-5 h-5 text-emerald-700" />
           </div>
-          <button
-            onClick={() => setIsBackupInfoOpen(true)}
-            className="px-2.5 py-1 rounded-xl border border-stone-200 bg-stone-50 hover:bg-stone-100 text-stone-700 text-[11px] font-bold flex items-center gap-1.5 cursor-pointer transition"
-            title={isGu ? 'બેકઅપ માર્ગદર્શિકા' : 'Backup Guide'}
-          >
-            <Info className="w-3.5 h-3.5 text-emerald-600" />
-            <span>{isGu ? 'માર્ગદર્શિકા (Guide)' : 'Guide'}</span>
-          </button>
+          <div>
+            <h3 className="text-sm font-extrabold text-stone-900">
+              {isGu ? 'સેફવોલ્ટ — એન્ક્રિપ્ટેડ બેકઅપ અને રિસ્ટોર' : 'SafeVault — Encrypted Backup & Restore'}
+            </h3>
+            <p className="text-[11px] text-stone-500">
+              {isGu ? 'AES-256-GCM · 12 રિકવરી શબ્દો · SHA-256 ચકાસણી' : 'AES-256-GCM · 12 recovery words · SHA-256 verified'}
+            </p>
+          </div>
         </div>
 
-        <p className="text-xs text-stone-500 leading-relaxed">
+        <p className="text-[11px] text-stone-600 leading-relaxed">
           {isGu
-            ? 'AES-GCM ૨૫૬-બીટ મિલિટરી-ગ્રેડ એન્ક્રિપ્ટેડ બેકઅપ. તમારો ડેટા સીધો Downloads ફોલ્ડરમાં સેવ થશે.'
-            : 'AES-GCM 256-bit military-grade encrypted backup. Files save directly to your Downloads folder.'}
+            ? 'એક ટેપમાં તમારો આખો ડેટા — વ્યવહારો, ડાયરી, ઉધાર-જમા, કેટેગરી, પ્રોફાઇલ અને પ્રેફરન્સ — એક જ઼ીરો-નૉલેજ .edbvault ફાઇલમાં સીલ થાય છે. રિસ્ટોર પહેલાં ડ્રાય-રન પ્રિવ્યૂ, ડુપ્લિકેટ ડિટેક્શન અને એક-ક્લિક અન-ડુ.'
+            : 'One tap seals your entire vault — transactions, diary, borrow/lend, categories, profile and preferences — into a single zero-knowledge .edbvault file. Restores are dry-run previewed with duplicate detection and one-click undo.'}
         </p>
 
-        {/* Action Buttons: Export, Share, Import, and Multi-Merge */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
           <button
-            id="export-backup-btn"
-            onClick={handleExportEncryptedBackup}
+            id="safevault-create-btn"
+            onClick={() => setIsSafeCreateOpen(true)}
             className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200 hover:bg-emerald-100 text-xs font-bold text-emerald-900 flex items-center justify-center gap-2 cursor-pointer transition shadow-xs active:scale-98"
           >
-            <DownloadCloud className="w-4 h-4 text-emerald-700" />
-            <span>{isGu ? 'Export Backup (સેવ કરો)' : 'Export to Downloads'}</span>
+            <Archive className="w-4 h-4 text-emerald-700" />
+            <span>{isGu ? 'બેકઅપ બનાવો (સેવ/શેર)' : 'Create Backup (Save / Share)'}</span>
           </button>
 
           <button
-            id="share-backup-btn"
-            onClick={handleShareEncryptedBackup}
-            className="p-3.5 rounded-2xl bg-teal-50 border border-teal-200 hover:bg-teal-100 text-xs font-bold text-teal-900 flex items-center justify-center gap-2 cursor-pointer transition shadow-xs active:scale-98"
-          >
-            <Share2 className="w-4 h-4 text-teal-700" />
-            <span>{isGu ? 'Share Backup (શેર કરો)' : 'Share Backup File'}</span>
-          </button>
-
-          <button
-            id="import-backup-btn"
-            type="button"
-            onClick={() => restoreFileInputRef.current?.click()}
+            id="safevault-restore-btn"
+            onClick={() => setIsSafeRestoreOpen(true)}
             className="p-3.5 rounded-2xl bg-stone-50 border border-stone-200 hover:bg-stone-100 text-xs font-bold text-stone-800 flex items-center justify-center gap-2 cursor-pointer transition shadow-xs active:scale-98"
           >
-            <Upload className="w-4 h-4 text-stone-600" />
-            <span>{isGu ? 'Import Backup Data (ઇમ્પોર્ટ)' : 'Import Backup Data'}</span>
-          </button>
-          <input
-            ref={restoreFileInputRef}
-            type="file"
-            accept=".edb,.json,application/json,text/plain,*/*"
-            onChange={handleFileSelectForRestore}
-            className="hidden"
-          />
-
-          <button
-            id="multi-import-backup-btn"
-            onClick={() => setIsMultiRestoreOpen(true)}
-            className="p-3.5 rounded-2xl bg-indigo-50 border border-indigo-200 hover:bg-indigo-100 text-xs font-bold text-indigo-950 flex items-center justify-center gap-2 cursor-pointer transition shadow-xs active:scale-98"
-          >
-            <Layers className="w-4 h-4 text-indigo-700" />
-            <span>{isGu ? 'Multiple Backup Merge (મર્જ)' : 'Multiple Backup Merge'}</span>
-          </button>
-
-          <button
-            type="button"
-            id="clearsms-import-btn"
-            onClick={() => restoreFileInputRef.current?.click()}
-            className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200 hover:bg-emerald-100 text-xs font-bold text-emerald-950 flex items-center justify-center gap-2 cursor-pointer transition shadow-xs active:scale-98 col-span-2"
-          >
-            <Database className="w-4 h-4 text-emerald-700" />
-            <span>{isGu ? 'ClearSMS Backup (.json) સીધું ઇમ્પોર્ટ કરો' : 'Import ClearSMS Backup (.json)'}</span>
+            <ArchiveRestore className="w-4 h-4 text-stone-600" />
+            <span>{isGu ? 'બેકઅપ રિસ્ટોર કરો' : 'Restore Backup'}</span>
           </button>
         </div>
+
+        <p className="text-[10px] text-stone-400 flex items-start gap-1.5">
+          <Info className="w-3 h-3 shrink-0 mt-0.5" />
+          <span>
+            {isGu
+              ? 'બેકઅપ ફાઇલમાં PIN/બાયોમેટ્રિક સેટિંગ્સ કે ડિવાઇસ રિકવરી શબ્દો કદીય સામેલ નથી હોતા. જૂની .edb બેકઅપ ફાઇલો પણ રિસ્ટોર થાય છે.'
+              : 'Backups never contain your PIN/biometric settings or device recovery words. Legacy .edb backup files remain restorable.'}
+          </span>
+        </p>
+      </div>
 
         {/* Financial Email Sync Card (Gmail & .EML Statement Parser) */}
         <div className="p-4 rounded-2xl bg-amber-50/70 border border-amber-200 space-y-3">
@@ -992,6 +671,26 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
               ? `સિસ્ટમમાં ${BUILTIN_CATEGORY_RULES.length} બિલ્ટ-ઇન અને ${userCategoryRules.length} કસ્ટમ રૂલ્સ સક્રિય છે. જ્યારે પણ તમે કોઈ ખર્ચની કેટેગરી બદલો છો, ત્યારે સિસ્ટમ ભવિષ્યના અને અગાઉના તમામ વ્યવહારો માટે આપમેળે નવો રૂલ બનાવી લે છે.`
               : `${BUILTIN_CATEGORY_RULES.length} built-in & ${userCategoryRules.length} custom rules active. Whenever you assign a category to a vendor, the system remembers and automatically auto-classifies past & future transactions.`}
           </p>
+
+          {/* ClearSMS App Backup (.json) Import */}
+          <div className="pt-1">
+            <button
+              type="button"
+              id="clearsms-import-btn"
+              onClick={() => smsImportInputRef.current?.click()}
+              className="w-full py-2.5 rounded-xl bg-white border border-emerald-200 hover:bg-emerald-50 text-xs font-bold text-emerald-900 flex items-center justify-center gap-2 cursor-pointer transition"
+            >
+              <FileUp className="w-4 h-4 text-emerald-700" />
+              <span>{isGu ? 'ClearSMS બેકઅપ (.json) ઇમ્પોર્ટ કરો' : 'Import ClearSMS Backup (.json)'}</span>
+            </button>
+            <input
+              ref={smsImportInputRef}
+              type="file"
+              accept=".json,application/json"
+              onChange={handleSmsImportFileSelect}
+              className="hidden"
+            />
+          </div>
 
           {/* Quick Add Rule Form */}
           <div className="p-2.5 rounded-xl bg-white border border-emerald-200 flex flex-wrap sm:flex-nowrap items-center gap-2">
@@ -1048,132 +747,6 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
             </div>
           )}
         </div>
-
-        {/* Cloud Vault Card */}
-        <div className="p-4 rounded-2xl bg-indigo-50/50 border border-indigo-200/80 space-y-3">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Cloud className="w-4 h-4 text-indigo-600" />
-              <span className="text-xs font-bold text-indigo-950">
-                {isGu ? 'ઝીરો-નોલેજ ક્લાઉડ વોલ્ટ' : 'Zero-Knowledge Cloud Vault'}
-              </span>
-            </div>
-            <button
-              onClick={handleUploadToCloudVault}
-              disabled={isCloudUploading}
-              className="py-1.5 px-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs transition cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
-            >
-              <RefreshCw className={`w-3.5 h-3.5 ${isCloudUploading ? 'animate-spin' : ''}`} />
-              <span>{isGu ? 'નવો સ્નેપશોટ અપલોડ' : 'Upload Snapshot'}</span>
-            </button>
-          </div>
-
-          {cloudBackups.length === 0 ? (
-            <div className="text-[11px] text-stone-500 py-1">
-              {isGu ? 'ક્લાઉડમાં કોઈ સ્નેપશોટ નથી.' : 'No cloud snapshots recorded yet.'}
-            </div>
-          ) : (
-            <div className="space-y-1.5 pt-1">
-              {cloudBackups.map((bk) => (
-                <div
-                  key={bk.id}
-                  className="flex items-center justify-between p-2 rounded-xl bg-white border border-indigo-100 text-xs text-stone-700"
-                >
-                  <div>
-                    <div className="font-semibold text-stone-800">
-                      {new Date(bk.timestamp).toLocaleString()}
-                    </div>
-                    <div className="text-[10px] text-stone-400">
-                      {(bk.sizeBytes / 1024).toFixed(1)} KB • {bk.deviceName}
-                    </div>
-                  </div>
-                  <button
-                    onClick={() => handleRestoreFromCloud(bk.id)}
-                    className="py-1 px-2.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-[11px] cursor-pointer"
-                  >
-                    {isGu ? 'રીસ્ટોર' : 'Restore'}
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* Real-time Hybrid Sync & Free Firebase Cloud Sync Card */}
-        <div className="p-4 rounded-2xl bg-emerald-50/60 border border-emerald-200/90 space-y-3">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <ShieldCheck className="w-4 h-4 text-emerald-700 shrink-0" />
-              <div>
-                <span className="text-xs font-bold text-emerald-950 block">
-                  {isGu ? 'હાઇબ્રિડ સિંક (હિડન ફોલ્ડર + ફ્રી ક્લાઉડ ડેટાબેઝ)' : 'Hybrid Real-Time Cloud Sync'}
-                </span>
-                <span className="text-[10px] text-emerald-700 font-medium">
-                  {isGu ? 'ફોન સ્ટોરેજ (.smart_vault) અને ક્લાઉડ વચ્ચે ઓટો સિંક' : 'Zero-knowledge encrypted cloud & hidden local vault'}
-                </span>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-1.5">
-              <button
-                type="button"
-                onClick={() => {
-                  setTempEnabled(cloudSyncConfig.enabled);
-                  setTempProjectId(cloudSyncConfig.projectId || '');
-                  setTempAutoSync(cloudSyncConfig.autoSync ?? true);
-                  setTempDocId(cloudSyncConfig.userSyncId || 'my_primary_vault');
-                  setIsCloudSyncModalOpen(true);
-                }}
-                className="py-1 px-2.5 rounded-xl border border-emerald-300 bg-white hover:bg-emerald-50 text-emerald-800 font-bold text-[11px] transition cursor-pointer"
-              >
-                {isGu ? 'સેટિંગ્સ / ગાઈડ' : 'Setup & Guide'}
-              </button>
-
-              <button
-                type="button"
-                onClick={handleTriggerCloudSync}
-                disabled={isSyncingNow}
-                className="py-1 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px] transition cursor-pointer flex items-center gap-1 shadow-2xs disabled:opacity-50"
-              >
-                <RefreshCw className={`w-3 h-3 ${isSyncingNow ? 'animate-spin' : ''}`} />
-                <span>{isSyncingNow ? (isGu ? 'સિંક...' : 'Syncing...') : (isGu ? 'હમણાં સિંક કરો' : 'Sync Now')}</span>
-              </button>
-            </div>
-          </div>
-
-          <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-emerald-100 text-[11px]">
-            <div className="flex items-center gap-1.5">
-              <span className="text-stone-500">{isGu ? 'ક્લાઉડ સ્ટેટસ:' : 'Cloud Status:'}</span>
-              <span className={`font-bold px-2 py-0.5 rounded-md ${
-                cloudSyncConfig.enabled && cloudSyncConfig.projectId
-                  ? 'bg-emerald-100 text-emerald-800'
-                  : 'bg-stone-100 text-stone-600'
-              }`}>
-                {cloudSyncConfig.enabled && cloudSyncConfig.projectId
-                  ? (isGu ? 'સક્રિય (Connected)' : 'Connected')
-                  : (isGu ? 'બંધ (Not Configured)' : 'Not Configured')}
-              </span>
-            </div>
-
-            <div className="flex items-center gap-1.5">
-              <span className="text-stone-500">{isGu ? 'છેલ્લું સિંક:' : 'Last Synced:'}</span>
-              <span className="font-mono text-stone-700 font-semibold">
-                {cloudSyncConfig.lastSyncedAt
-                  ? new Date(cloudSyncConfig.lastSyncedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-                  : (isGu ? 'ક્યારેય નહીં' : 'Never')}
-              </span>
-            </div>
-          </div>
-
-          {cloudSyncNotice && (
-            <div className={`p-2 rounded-xl text-xs font-semibold ${
-              cloudSyncNotice.isError ? 'bg-rose-50 text-rose-700 border border-rose-200' : 'bg-white text-emerald-800 border border-emerald-200'
-            }`}>
-              {cloudSyncNotice.text}
-            </div>
-          )}
-        </div>
-      </div>
 
       {/* 3. Language & Currency Settings (Task 15: Side-by-Side Dropdowns) */}
       <div
@@ -1647,299 +1220,22 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
         </div>
       )}
 
-      {/* Restore Passphrase Prompt Modal */}
-      {pendingRestoreEnvelope && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs">
-          <div className="w-full max-w-md bg-white rounded-3xl p-6 shadow-2xl border border-stone-200 space-y-4">
-            <div className="flex items-center gap-2">
-              <Upload className="w-5 h-5 text-emerald-600" />
-              <h3 className="text-sm font-bold text-stone-900">
-                {isGu ? 'એન્ક્રિપ્ટેડ બેકઅપ ડિક્રિપ્ટ કરો' : 'Decrypt & Restore Backup'}
-              </h3>
-            </div>
-
-            <p className="text-xs text-stone-500 leading-relaxed">
-              {isGu
-                ? 'આ બેકઅપ AES-GCM ૨૫૬-બીટ દ્વારા સુરક્ષિત છે. ડેટા પુનઃપ્રાપ્ત કરવા માટે તમારી ૧૨ શબ્દોની રિકવરી કી દાખલ કરો:'
-                : 'This file is encrypted with AES-GCM-256. Enter your 12 recovery words to restore:'}
-            </p>
-
-            {restoreError && (
-              <div className="p-2.5 bg-rose-50 border border-rose-200 text-rose-700 text-xs font-medium rounded-xl flex items-center gap-2">
-                <AlertCircle className="w-4 h-4 shrink-0" />
-                <span>{restoreError}</span>
-              </div>
-            )}
-
-            <textarea
-              rows={3}
-              value={restorePassphraseInput}
-              onChange={(e) => setRestorePassphraseInput(e.target.value)}
-              placeholder="word1 word2 word3 ... word12"
-              className="w-full p-3 text-xs rounded-xl border border-stone-200 bg-stone-50 font-mono outline-none focus:border-emerald-500"
-            />
-
-            <div className="flex gap-2 pt-1">
-              <button
-                onClick={() => setPendingRestoreEnvelope(null)}
-                className="flex-1 py-2.5 rounded-xl bg-stone-100 hover:bg-stone-200 text-xs font-semibold text-stone-700 cursor-pointer"
-              >
-                {t.cancel}
-              </button>
-              <button
-                onClick={handleExecuteRestore}
-                disabled={isRestoring || !restorePassphraseInput.trim()}
-                className="flex-1 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-xs font-bold text-white cursor-pointer disabled:opacity-50"
-              >
-                {isRestoring ? (isGu ? 'ચકાસણી...' : 'Restoring...') : (isGu ? 'રીસ્ટોર કરો' : 'Restore Data')}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Multi-File Restore & Smart Merge Modal (§6) */}
-      <MultiRestoreModal
-        isOpen={isMultiRestoreOpen}
-        onClose={() => setIsMultiRestoreOpen(false)}
-        currentTransactions={transactions}
-        currentDiaryEntries={diaryEntries}
-        currentBorrowLend={borrowedLentRecords}
-        onCommitRestore={(mergedTxs, mergedDiary, mergedBL) => {
-          onRestoreTransactions(mergedTxs);
-          onRestoreDiaryEntries(mergedDiary);
-          if (onRestoreBorrowedLentRecords) {
-            onRestoreBorrowedLentRecords(mergedBL);
-          }
-        }}
+      {/* SafeVault Create Modal */}
+      <SafeVaultCreateModal
+        isOpen={isSafeCreateOpen}
+        onClose={() => setIsSafeCreateOpen(false)}
+        payload={safeVaultCurrent}
         isGu={isGu}
       />
 
-      {/* Backup Guide Info Modal (Task 13) */}
-      {isBackupInfoOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs">
-          <div className="w-full max-w-lg bg-white rounded-3xl p-6 sm:p-7 shadow-2xl border border-stone-200 space-y-4 max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between border-b border-stone-100 pb-3">
-              <div className="flex items-center gap-2">
-                <div className="p-2 rounded-xl bg-emerald-50 text-emerald-700">
-                  <Database className="w-5 h-5" />
-                </div>
-                <div>
-                  <h3 className="text-base font-bold text-stone-900">
-                    {isGu ? 'બેકઅપ અને રીસ્ટોર માર્ગદર્શિકા' : 'Backup & Restore Guide'}
-                  </h3>
-                  <p className="text-[11px] text-stone-500">
-                    {isGu ? 'ડેટા સુરક્ષા અને ટ્રાન્સફર સંબંધિત માહિતી' : 'Data security and transfer details'}
-                  </p>
-                </div>
-              </div>
-              <button
-                onClick={() => setIsBackupInfoOpen(false)}
-                className="w-8 h-8 rounded-full bg-stone-100 hover:bg-stone-200 flex items-center justify-center text-stone-600 font-bold text-sm cursor-pointer"
-              >
-                ✕
-              </button>
-            </div>
-
-            <div className="space-y-3.5 text-xs text-stone-600 leading-relaxed">
-              <div className="p-3.5 rounded-2xl bg-emerald-50/60 border border-emerald-200/80 space-y-1">
-                <div className="font-bold text-emerald-950 flex items-center gap-1.5">
-                  <DownloadCloud className="w-4 h-4 text-emerald-700" />
-                  <span>1. Export Backup Data (બેકઅપ એક્સપોર્ટ)</span>
-                </div>
-                <p className="text-emerald-900">
-                  {isGu
-                    ? 'તમારા તમામ આવક-ખર્ચના વ્યવહારો, પર્સનલ ડાયરીની એન્ટ્રીઓ, ઉધાર-જમા ખાતા અને પ્રોફાઇલ ડેટાને મિલિટરી-ગ્રેડ AES-GCM ૨૫૬-બીટથી એન્ક્રિપ્ટ કરીને તમારા ફોનના Downloads ફોલ્ડરમાં સાચવે છે.'
-                    : 'Encrypted with AES-GCM 256-bit military-grade encryption and saved directly into your device Downloads folder.'}
-                </p>
-              </div>
-
-              <div className="p-3.5 rounded-2xl bg-stone-50 border border-stone-200 space-y-1">
-                <div className="font-bold text-stone-900 flex items-center gap-1.5">
-                  <Upload className="w-4 h-4 text-stone-700" />
-                  <span>2. Import Backup Data (બેકઅપ ઇમ્પોર્ટ)</span>
-                </div>
-                <p className="text-stone-700">
-                  {isGu
-                    ? 'નવો ફોન લીધા પછી અથવા એપ ફરી ઇન્સ્ટોલ કર્યા પછી અગાઉ સાચવેલી .edb કે .json ફાઈલ પસંદ કરી ૧૨-શબ્દોની કી વડે તમામ ડેટા એક ક્લિકમાં પાછો લાવો.'
-                    : 'Select your saved .edb or .json file and decrypt using your 12-word passphrase to restore everything.'}
-                </p>
-              </div>
-
-              <div className="p-3.5 rounded-2xl bg-indigo-50/60 border border-indigo-200/80 space-y-1">
-                <div className="font-bold text-indigo-950 flex items-center gap-1.5">
-                  <Layers className="w-4 h-4 text-indigo-700" />
-                  <span>3. Multiple Import Backup Data (મલ્ટિપલ બેકઅપ મર્જ)</span>
-                </div>
-                <p className="text-indigo-900">
-                  {isGu
-                    ? 'જો તમારી પાસે અલગ-અલગ તારીખો કે ડિવાઇસના એકથી વધુ બેકઅપ હોય, તો તેને ડુપ્લિકેટ વગર સ્માર્ટ રીતે ભેગા (merge) કરી આપે છે.'
-                    : 'Merge multiple backup files without creating duplicate transactions.'}
-                </p>
-              </div>
-
-              <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-[11px] flex items-start gap-2">
-                <ShieldCheck className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
-                <span>
-                  {isGu
-                    ? 'સલાહ: બેકઅપ ફાઈલ સેવ થયા બાદ તેને તમારા ગૂગલ ડ્રાઈવ કે ઈમેલમાં સાચવી રાખો જેથી ફોન ખોવાઈ જાય તો પણ તમારો હિસાબ સુરક્ષિત રહે.'
-                    : 'Tip: After exporting, save a copy to your Google Drive or email so your records stay safe even if you switch phones.'}
-                </span>
-              </div>
-            </div>
-
-            <button
-              onClick={() => setIsBackupInfoOpen(false)}
-              className="w-full py-2.5 rounded-xl bg-stone-900 hover:bg-stone-800 text-white font-bold text-xs cursor-pointer transition shadow-xs"
-            >
-              {isGu ? 'સમજાઈ ગયું (Close)' : 'Got it'}
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* CLOUD SYNC & HIDDEN VAULT SETUP MODAL */}
-      {isCloudSyncModalOpen && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in"
-          onClick={() => setIsCloudSyncModalOpen(false)}
-        >
-          <div
-            className="w-full max-w-md bg-white rounded-3xl p-5 sm:p-6 shadow-2xl border border-stone-200 text-stone-800 space-y-4 max-h-[90vh] overflow-y-auto"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between pb-3 border-b border-stone-100">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-xl bg-emerald-100 text-emerald-800 flex items-center justify-center">
-                  <Cloud className="w-4 h-4" />
-                </div>
-                <div>
-                  <h3 className="text-sm font-bold text-stone-900">
-                    {isGu ? 'ફ્રી ક્લાઉડ સિંક સેટઅપ (Firebase)' : 'Free Cloud Sync Setup'}
-                  </h3>
-                  <p className="text-[11px] text-stone-500">
-                    {isGu ? 'ઝીરો-નોલેજ AES-256 મિલિટરી એન્ક્રિપ્શન' : 'Zero-Knowledge AES-256 Encrypted'}
-                  </p>
-                </div>
-              </div>
-              <button
-                onClick={() => setIsCloudSyncModalOpen(false)}
-                className="p-1 text-stone-400 hover:text-stone-700 rounded-lg cursor-pointer"
-              >
-                ✕
-              </button>
-            </div>
-
-            {/* Enable/Disable Toggle */}
-            <div className="flex items-center justify-between p-3 rounded-2xl bg-stone-50 border border-stone-200">
-              <div>
-                <span className="text-xs font-bold text-stone-800 block">
-                  {isGu ? 'ક્લાઉડ ઓટો-સિંક સક્રિય કરો' : 'Enable Cloud Sync'}
-                </span>
-                <span className="text-[10px] text-stone-500">
-                  {isGu ? 'નવો વ્યવહાર ઉમેરતા જ ક્લાઉડમાં ઓટો-સેવ' : 'Auto-syncs encrypted vault in background'}
-                </span>
-              </div>
-              <input
-                type="checkbox"
-                checked={tempEnabled}
-                onChange={(e) => setTempEnabled(e.target.checked)}
-                className="w-5 h-5 text-emerald-600 rounded border-stone-300 focus:ring-emerald-500 cursor-pointer"
-              />
-            </div>
-
-            {/* Firebase Project ID Input */}
-            <div className="space-y-1.5">
-              <label className="text-xs font-bold text-stone-700 block">
-                {isGu ? 'Firebase Project ID (પ્રોજેક્ટ આઈડી):' : 'Firebase Project ID:'}
-              </label>
-              <input
-                type="text"
-                placeholder="દા.ત. my-smart-expense-app"
-                value={tempProjectId}
-                onChange={(e) => setTempProjectId(e.target.value)}
-                className="w-full px-3.5 py-2.5 rounded-xl border border-stone-200 bg-stone-50 text-xs font-mono outline-none focus:border-emerald-500"
-              />
-              <span className="text-[10px] text-stone-500 block">
-                {isGu
-                  ? 'ફ્રી Firebase Spark plan માંથી મળેલો Project ID અહીં દાખલ કરો.'
-                  : 'Enter your project ID from Firebase Console (Spark Free Tier).'}
-              </span>
-            </div>
-
-            {/* Step-by-Step Setup Guide Accordion */}
-            <div className="p-3.5 bg-emerald-50/70 border border-emerald-200 rounded-2xl space-y-2 text-xs">
-              <div className="font-bold text-emerald-950 flex items-center gap-1.5">
-                <Info className="w-4 h-4 text-emerald-700" />
-                <span>{isGu ? 'ફ્રી ડેટાબેઝ કેવી રીતે બનાવવો? (૨ મિનિટ)' : 'How to set up free cloud db (2 mins)'}</span>
-              </div>
-
-              <ol className="list-decimal list-inside space-y-1.5 text-stone-700 text-[11px] leading-relaxed">
-                <li>
-                  {isGu ? (
-                    <>બ્રાઉઝરમાં <strong>console.firebase.google.com</strong> ખોલો અને ગૂગલ એકાઉન્ટથી લૉગિન કરો.</>
-                  ) : (
-                    <>Go to <strong>console.firebase.google.com</strong> and sign in.</>
-                  )}
-                </li>
-                <li>
-                  {isGu ? (
-                    <><strong>"Create a project"</strong> પર ક્લિક કરી કોઈપણ નામ આપો (દા.ત. <code>my-expense-vault</code>).</>
-                  ) : (
-                    <>Click <strong>"Create a project"</strong> and enter any name.</>
-                  )}
-                </li>
-                <li>
-                  {isGu ? (
-                    <>ડાબી બાજુ <strong>Build &gt; Firestore Database</strong> પર ક્લિક કરી <strong>"Create Database"</strong> કરો (Start in test mode).</>
-                  ) : (
-                    <>Navigate to <strong>Build &gt; Firestore Database</strong> and click <strong>Create Database</strong>.</>
-                  )}
-                </li>
-                <li>
-                  {isGu ? (
-                    <>પ્રોજેક્ટ સેટિંગ્સમાંથી <strong>Project ID</strong> કોપી કરી ઉપરના બોક્સમાં પેસ્ટ કરો અને નીચે <strong>Save</strong> કરો!</>
-                  ) : (
-                    <>Copy your <strong>Project ID</strong> from Project Settings and paste it above!</>
-                  )}
-                </li>
-              </ol>
-
-              <div className="text-[10px] text-emerald-800 bg-white p-2 rounded-xl border border-emerald-100">
-                🔒 {isGu
-                  ? 'ગેરંટી: તમારો ડેટા તમારા 12 શબ્દોના માસ્ટર પાસફ્રેઝથી ફોનમાં જ 256-બીટ એન્ક્રિપ્ટ થઈને જશે. ક્લાઉડ સર્વર કે અન્ય કોઈ પણ તેને વાંચી શકશે નહીં!'
-                  : 'Zero-Knowledge: Encrypted on-device using your 12-word passphrase. 100% private.'}
-              </div>
-
-              <div className="text-[10px] text-amber-800 bg-amber-50 p-2 rounded-xl border border-amber-200">
-                ⚠️ {isGu ? (
-                  <>Firestore <strong>rules</strong> 'test mode' માં મૂકેલા હોય તો કોઈપણ તમારી <strong>document ID</strong> પર લખી શકે છે (backup ઉપર overwrite). સેટઅપ પછી rules બદલો: <code>allow read, write: if request.auth != null;</code> અને દરેક user <strong>unique document ID</strong> (userSyncId) વાપરે.</>
-                ) : (
-                  <>If Firestore <strong>rules</strong> remain in 'test mode', anyone can overwrite this backup document. After setup, restrict writes — e.g. <code>allow read, write: if request.auth != null;</code> — and always use a <strong>unique document ID</strong> (userSyncId) per account.</>
-                )}
-              </div>
-            </div>
-
-            {/* Actions */}
-            <div className="flex gap-2 pt-1">
-              <button
-                type="button"
-                onClick={() => setIsCloudSyncModalOpen(false)}
-                className="flex-1 py-2.5 rounded-xl border border-stone-200 text-stone-700 text-xs font-bold hover:bg-stone-50 cursor-pointer"
-              >
-                {t.cancel}
-              </button>
-              <button
-                type="button"
-                onClick={handleSaveCloudSyncSettings}
-                className="flex-1 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition shadow-xs cursor-pointer"
-              >
-                {isGu ? 'સાચવો અને કનેક્ટ કરો' : 'Save & Connect'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* SafeVault Restore Modal */}
+      <SafeVaultRestoreModal
+        isOpen={isSafeRestoreOpen}
+        onClose={() => setIsSafeRestoreOpen(false)}
+        current={safeVaultCurrent}
+        isGu={isGu}
+        onApply={applyVaultStats}
+      />
     </div>
   );
 };

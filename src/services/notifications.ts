@@ -2,6 +2,7 @@
 // Smart scheduling, duplicate suppression, snooze intervals, and action buttons
 
 import { Transaction } from '../types';
+import { NativeBridgeService } from './nativeBridge';
 
 export interface SnoozeOption {
   label: string;
@@ -92,7 +93,6 @@ export async function sendDailyReminderNotification(
 ): Promise<void> {
   // 1. Try native Android status bar notification with sound/vibration first
   try {
-    const { NativeBridgeService } = await import('./nativeBridge');
     const nativeShown = await NativeBridgeService.showNotification(title, body);
     if (nativeShown) return;
   } catch {

@@ -1,17 +1,14 @@
 import React, { useState } from 'react';
 import { 
   Sparkles, 
-  MessageSquare, 
   Send, 
   AlertTriangle, 
   ShieldCheck, 
   Lightbulb, 
   Clock, 
   Smartphone, 
-  Check, 
   CheckCircle2, 
-  RefreshCw,
-  Plus
+  RefreshCw
 } from 'lucide-react';
 import { Transaction, Category, PendingAIMessage, AppActivityAlert } from '../types';
 import { TranslationStrings } from '../data/languages';

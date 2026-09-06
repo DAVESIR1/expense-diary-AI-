@@ -467,7 +467,7 @@ export function parseTransactionMessage(
 
   // 7c. Info narration check (e.g. Info: IMPS/P2A/303915808095/NITINKUM/STATEBAN/)
   if (!vendorOrPerson) {
-    const infoMatch = clean.match(/\bInfo\s*[-:.]\s*([^\n.]{2,80})/i);
+    const infoMatch = clean.match(/\bInfo\s*(?:-|:|\.)\s*([^\n.]{2,80})/i);
     if (infoMatch && infoMatch[1]) {
       const parts = infoMatch[1].split(/[\/-]/).map(p => p.trim()).filter(p => p.length >= 3 && !/^\d+$/.test(p) && !/^(IMPS|NEFT|RTGS|UPI|P2A|P2P|MOB|XX+\d*|STATEBAN|AXISBAN|HDFCBAN|ICICIBAN)$/i.test(p));
       if (parts.length > 0) {

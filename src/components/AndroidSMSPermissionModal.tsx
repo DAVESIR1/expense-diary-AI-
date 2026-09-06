@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { MessageSquareText, ShieldAlert, CheckCircle2, X, Lock, Bell, BarChart3 } from 'lucide-react';
+import React from 'react';
+import { MessageSquareText, ShieldAlert, CheckCircle2, X, Lock } from 'lucide-react';
 import { TranslationStrings } from '../data/languages';
 import { NativeBridgeService } from '../services/nativeBridge';
 

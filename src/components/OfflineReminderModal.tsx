@@ -5,7 +5,6 @@ import {
   CheckCircle2, 
   X, 
   Plus, 
-  Calendar, 
   Volume2
 } from 'lucide-react';
 import { Category, Transaction } from '../types';
@@ -81,7 +80,7 @@ export const OfflineReminderModal: React.FC<OfflineReminderModalProps> = ({
     }
   };
 
-  const handleSnooze = (minutes: number, labelGu: string, labelEn: string) => {
+  const handleSnooze = (minutes: number, _labelGu?: string, _labelEn?: string) => {
     const nowTimeStr = new Date().toLocaleTimeString(isGu ? 'gu-IN' : 'en-US', {
       hour: '2-digit',
       minute: '2-digit',

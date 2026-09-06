@@ -1,6 +1,5 @@
 import React from 'react';
 import { 
-  ShieldCheck, 
   Layers, 
   Smartphone, 
   Laptop, 
@@ -15,7 +14,7 @@ interface AboutScreenProps {
   currentLang: string;
 }
 
-export const AboutScreen: React.FC<AboutScreenProps> = ({ t, currentLang }) => {
+export const AboutScreen: React.FC<AboutScreenProps> = ({ currentLang }) => {
   const isGu = currentLang === 'gu';
 
   return (

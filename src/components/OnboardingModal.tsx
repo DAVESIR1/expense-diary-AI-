@@ -30,7 +30,7 @@ import {
 import { requestNotificationPermission } from '../services/notifications';
 import { NativeBridgeService } from '../services/nativeBridge';
 import { VaultStorage } from '../services/vaultStorage';
-import { decryptPayload } from '../services/encryption';
+import { parseVaultEnvelopeText, decryptSafeVault, decryptLegacyVault } from '../services/safeVault';
 
 interface OnboardingModalProps {
   onComplete: (data: {
@@ -266,23 +266,26 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
         try {
           const fileText = await selectedBackupFile.text();
           const parsed = JSON.parse(fileText);
-          if (parsed.magic === 'EDBAES256') {
-            const decrypted: any = await decryptPayload(parsed, wordsArr.join(' '));
-            if (decrypted) {
-              restoredTransactions = decrypted.transactions;
-              restoredDiary = decrypted.diaryEntries;
-              restoredBL = decrypted.borrowedLentRecords;
-              restoredCategories = decrypted.categories;
-              if (decrypted.profile?.name) restoredName = decrypted.profile.name;
-              if (decrypted.profile?.monthlyBudget) restoredBudget = decrypted.profile.monthlyBudget;
-              if (decrypted.profile?.currency) restoredCurrency = decrypted.profile.currency;
-            }
+          const parsedFile = parseVaultEnvelopeText(fileText);
+          let decrypted: any = null;
+          if (parsedFile.kind === 'safevault') {
+            // SafeVault v3 (.edbvault) — manifest-verified.
+            decrypted = (await decryptSafeVault(parsedFile.envelope, wordsArr.join(' '))).payload;
+          } else if (parsedFile.kind === 'legacy') {
+            // Legacy EDBAES256 (.edb) envelope from pre-v3 exports.
+            decrypted = (await decryptLegacyVault(parsedFile.envelope, wordsArr.join(' '))).payload;
           } else if (parsed.transactions) {
-            restoredTransactions = parsed.transactions;
-            restoredDiary = parsed.diaryEntries;
-            restoredBL = parsed.borrowedLentRecords;
-            restoredCategories = parsed.categories;
-            if (parsed.profile?.name) restoredName = parsed.profile.name;
+            // Old unencrypted JSON export.
+            decrypted = parsed;
+          }
+          if (decrypted) {
+            restoredTransactions = decrypted.transactions;
+            restoredDiary = decrypted.diaryEntries;
+            restoredBL = decrypted.borrowedLentRecords;
+            restoredCategories = decrypted.categories;
+            if (decrypted.profile?.name) restoredName = decrypted.profile.name;
+            if (decrypted.profile?.monthlyBudget) restoredBudget = decrypted.profile.monthlyBudget;
+            if (decrypted.profile?.currency) restoredCurrency = decrypted.profile.currency;
           }
         } catch (e: any) {
           setError(

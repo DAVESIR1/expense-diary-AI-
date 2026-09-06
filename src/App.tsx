@@ -745,6 +745,15 @@ export default function App() {
   const handleRestoreBorrowedLentRecords = (records: BorrowedLentRecord[]) => {
     setBorrowedLentRecords(records);
   };
+  const handleRestoreCategories = (cats: Category[]) => {
+    setCategories(cats);
+  };
+  const handleRestorePreferences = (prefs: { lang?: string; theme?: string; font?: string; currency?: string }) => {
+    if (prefs.lang) setCurrentLang(prefs.lang);
+    if (prefs.theme) setActiveTheme(prefs.theme);
+    if (prefs.font) setActiveFont(prefs.font);
+    if (prefs.currency) setCurrency(prefs.currency);
+  };
 
   // Reset PIN with Passphrase
   const handleResetPinWithPassphrase = async (newPin: string) => {
@@ -1069,6 +1078,8 @@ export default function App() {
             onRestoreDiaryEntries={handleRestoreDiaryEntries}
             borrowedLentRecords={borrowedLentRecords}
             onRestoreBorrowedLentRecords={handleRestoreBorrowedLentRecords}
+            onRestoreCategories={handleRestoreCategories}
+            onRestorePreferences={handleRestorePreferences}
             securityConfig={securityConfig}
             onUpdateSecurityConfig={handleUpdateSecurityConfig}
             savedPassphraseWords={savedPassphraseWords}

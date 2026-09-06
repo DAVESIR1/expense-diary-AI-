@@ -323,7 +323,7 @@ export const AuthLockScreen: React.FC<AuthLockScreenProps> = ({
           ['1', '2', '3'],
           ['4', '5', '6'],
           ['7', '8', '9'],
-        ].map((row, rIdx) => (
+        ].map((row) => (
           <div key={row[0]} className="grid grid-cols-3 gap-3 sm:gap-4">
             {row.map((digit) => (
               <button
